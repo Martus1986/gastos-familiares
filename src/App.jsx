@@ -88,7 +88,21 @@ const fmt = n => new Intl.NumberFormat("es-AR",{style:"currency",currency:"ARS",
 const fmtUSD = n => `U$D ${Math.round(n||0).toLocaleString("es-AR")}`;
 const getMep = (mes, mepExtra) => mepExtra[mes] || MEP_HISTORICO[mes] || 1400;
 
-function calcTotales(mes, gastosCargados, mepExtra) {
+const CATEGORIAS_INGRESO = [
+  { id:"alq_sanmartin",  label:"Alquiler San Martín" },
+  { id:"guarderia_coto", label:"Guardería Coto" },
+  { id:"alq_cdp547",    label:"Alquiler CDP 547" },
+  { id:"alq_fitzroy",   label:"Alquiler Fitz Roy" },
+];
+
+function getIngresos(mes, ingresosCargados) {
+  const esH = MESES_HISTORICOS.includes(mes);
+  if (esH) return INGRESOS_2026[mes]||{};
+  const ic = ingresosCargados[mes]||{};
+  return ic;
+}
+
+function calcTotales(mes, gastosCargados, mepExtra, ingresosCargados={}) {
   const fijos = GASTOS_FIJOS_2026[mes]||{};
   const cargados = gastosCargados[mes]||[];
   const esH = MESES_HISTORICOS.includes(mes);
@@ -99,9 +113,9 @@ function calcTotales(mes, gastosCargados, mepExtra) {
     const otrosC = cargados.filter(g=>g.categoria==="otros");
     if (otrosC.length>0) totalGastos = totalGastos-(fijos.otros||0)+otrosC.reduce((a,b)=>a+b.monto,0);
   } else {
-    totalGastos = cargados.reduce((a,b)=>a+b.monto,0);
+    totalGastos = cargados.filter(g=>!g.es_ingreso).reduce((a,b)=>a+b.monto,0);
   }
-  const ing = INGRESOS_2026[mes]||{};
+  const ing = getIngresos(mes, ingresosCargados);
   const totalIngresos = Object.values(ing).reduce((a,b)=>a+(b||0),0);
   return { totalGastos, totalGastosUSD:totalGastos/mep, totalIngresos, totalIngresosUSD:totalIngresos/mep, balance:totalIngresos-totalGastos, balanceUSD:(totalIngresos-totalGastos)/mep, mep };
 }
@@ -171,20 +185,20 @@ function MiniBar({ label, value, max, pagador, onExpand, expandido, children }) 
   );
 }
 
-function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra }) {
+function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingresosCargados }) {
   const [expandOtros, setExpandOtros] = useState(false);
-  const t = calcTotales(mes, gastosCargados, mepExtra);
+  const t = calcTotales(mes, gastosCargados, mepExtra, ingresosCargados);
   const fijos = GASTOS_FIJOS_2026[mes]||{};
-  const ing = INGRESOS_2026[mes]||{};
+  const ing = getIngresos(mes, ingresosCargados);
   const ad = ADELANTOS_HISTORICOS[mes]||{};
   const esH = MESES_HISTORICOS.includes(mes);
   const cargados = gastosCargados[mes]||[];
   const otrosC = cargados.filter(g=>g.categoria==="otros");
   const otrosTotal = esH&&otrosC.length===0 ? (fijos.otros||0) : otrosC.reduce((a,b)=>a+b.monto,0);
-  const adelantosM = esH?(ad.martin||0):cargados.filter(g=>g.quien==="martin").reduce((a,b)=>a+b.monto,0);
-  const adelantosV = esH?(ad.vero||0):cargados.filter(g=>g.quien==="vero").reduce((a,b)=>a+b.monto,0);
+  const adelantosM = esH?(ad.martin||0):cargados.filter(g=>g.quien==="martin"&&!g.es_ingreso).reduce((a,b)=>a+b.monto,0);
+  const adelantosV = esH?(ad.vero||0):cargados.filter(g=>g.quien==="vero"&&!g.es_ingreso).reduce((a,b)=>a+b.monto,0);
   const diff = adelantosM-adelantosV;
-  const ingItems = [{l:"Alquiler San Martín",v:ing.alq_sanmartin},{l:"Guardería Coto",v:ing.guarderia_coto},{l:"Alquiler CDP 547",v:ing.alq_cdp547},{l:"Alquiler Fitz Roy",v:ing.alq_fitzroy}].filter(r=>r.v>0);
+  const ingItems = CATEGORIAS_INGRESO.map(ci=>({l:ci.label, v:ing[ci.id]||0})).filter(r=>r.v>0);
 
   return (
     <div style={S.section}>
@@ -215,26 +229,33 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra }) {
 
       <div style={S.card}>
         <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>Gastos del mes</div>
-        {CATEGORIAS.filter(cat=>(fijos[cat.id]&&fijos[cat.id]>0)||cargados.some(g=>g.categoria===cat.id)).map(cat=>{
-          const esO = cat.id==="otros";
-          const valor = esO ? otrosTotal : (fijos[cat.id]||0);
-          if (!valor&&!esO) return null;
-          return (
-            <MiniBar key={cat.id} label={cat.label} value={valor} max={t.totalGastos} pagador={PAGADOR_2026[cat.id]?.[mes]||null}
-              onExpand={esO?()=>setExpandOtros(e=>!e):null} expandido={esO&&expandOtros}>
-              {otrosC.length>0 ? (<>
-                {otrosC.map((g,i)=>(
-                  <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion}</span></div>
-                    <span style={{ fontSize:12, fontWeight:700 }}>{fmt(g.monto)}</span>
-                  </div>
-                ))}
-                <div style={S.divider}/>
-                {["martin","vero","fondo"].map(q=>{ const tot=otrosC.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}
-              </>) : <div style={{ color:C.muted, fontSize:12 }}>Sin detalle — valor del Excel</div>}
-            </MiniBar>
-          );
-        })}
+        {esH ? (
+          CATEGORIAS.filter(cat=>(fijos[cat.id]&&fijos[cat.id]>0)||cargados.some(g=>g.categoria===cat.id)).map(cat=>{
+            const esO = cat.id==="otros";
+            const valor = esO ? otrosTotal : (fijos[cat.id]||0);
+            if (!valor&&!esO) return null;
+            return (
+              <MiniBar key={cat.id} label={cat.label} value={valor} max={t.totalGastos} pagador={PAGADOR_2026[cat.id]?.[mes]||null}
+                onExpand={esO?()=>setExpandOtros(e=>!e):null} expandido={esO&&expandOtros}>
+                {otrosC.length>0 ? (<>
+                  {otrosC.map((g,i)=>(
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion}</span></div>
+                      <span style={{ fontSize:12, fontWeight:700 }}>{fmt(g.monto)}</span>
+                    </div>
+                  ))}
+                  <div style={S.divider}/>
+                  {["martin","vero","fondo"].map(q=>{ const tot=otrosC.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}
+                </>) : <div style={{ color:C.muted, fontSize:12 }}>Sin detalle — valor del Excel</div>}
+              </MiniBar>
+            );
+          })
+        ) : (
+          cargados.filter(g=>!g.es_ingreso).map((g,i)=>(
+            <MiniBar key={i} label={CATEGORIAS.find(c=>c.id===g.categoria)?.label||g.categoria} value={g.monto} max={t.totalGastos||1} pagador={g.quien} />
+          ))
+        )}
+        {!esH && cargados.filter(g=>!g.es_ingreso).length===0 && <div style={{ color:C.muted, fontSize:13 }}>Sin gastos cargados este mes</div>}
       </div>
 
       <div style={S.card}>
@@ -289,7 +310,7 @@ function TabAlquileres({ mes, setMes, mesesActivos, mepExtra }) {
   );
 }
 
-function TabBalance({ mesesActivos, gastosCargados, mepExtra }) {
+function TabBalance({ mesesActivos, gastosCargados, mepExtra, ingresosCargados }) {
   return (
     <div style={S.section}>
       <div style={{ fontWeight:800, fontSize:16, marginBottom:14 }}>Todos los meses</div>
@@ -308,8 +329,8 @@ function TabBalance({ mesesActivos, gastosCargados, mepExtra }) {
   );
 }
 
-function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones }) {
-  const vals = mesesActivos.map(m=>calcTotales(m,gastosCargados,mepExtra));
+function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, ingresosCargados }) {
+  const vals = mesesActivos.map(m=>calcTotales(m,gastosCargados,mepExtra,ingresosCargados));
   const pags = mesesActivos.map(m=>calcPagadores(m,gastosCargados,liquidaciones));
   const maxVal = Math.max(...vals.map(v=>Math.max(v.totalGastos,v.totalIngresos)),1);
   return (
@@ -371,12 +392,25 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones }) 
   );
 }
 
-function TabCargar({ mesesActivos, gastosCargados, setGastosCargados }) {
+function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
+  const [modo, setModo] = useState("gasto"); // "gasto" | "ingreso"
   const [form, setForm] = useState({ mes:mesDefault, categoria:"otros", descripcion:"", monto:"", quien:"martin" });
+  const [formIng, setFormIng] = useState({ mes:mesDefault, tipo:"alq_sanmartin", monto:"" });
   const [editando, setEditando] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [savedIng, setSavedIng] = useState(false);
   const formRef = useRef(null);
+
+  const guardarIngreso = async () => {
+    if (!formIng.monto||parseFloat(formIng.monto)<=0) return;
+    const updated = { ...ingresosCargados, [formIng.mes]: { ...(ingresosCargados[formIng.mes]||{}), [formIng.tipo]: parseFloat(formIng.monto) }};
+    setIngresosCargados(updated);
+    await guardarDato('ingresos_cargados', updated);
+    setSavedIng(true);
+    setFormIng(f=>({...f, monto:""}));
+    setTimeout(()=>setSavedIng(false), 2000);
+  };
 
   const guardar = async () => {
     if (!form.monto||parseFloat(form.monto)<=0) return;
@@ -410,6 +444,38 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados }) {
 
   return (
     <div style={S.section}>
+      {/* Tab switcher gasto/ingreso */}
+      <div style={{ display:"flex", gap:8, marginBottom:14 }}>
+        {[["gasto","💸 Gasto"],["ingreso","💰 Ingreso"]].map(([m,l])=>(
+          <button key={m} onClick={()=>setModo(m)} style={{ flex:1, padding:"11px 0", borderRadius:10, border:`2px solid ${modo===m?C.accent:C.border}`, background:modo===m?C.accent+"22":"transparent", color:modo===m?C.accent:C.muted, fontWeight:700, cursor:"pointer", fontSize:14 }}>{l}</button>
+        ))}
+      </div>
+
+      {modo==="ingreso" ? (
+        <div style={S.card}>
+          <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>Cargar ingreso</div>
+          <select style={S.select} value={formIng.mes} onChange={e=>setFormIng(f=>({...f,mes:e.target.value}))}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
+          <select style={S.select} value={formIng.tipo} onChange={e=>setFormIng(f=>({...f,tipo:e.target.value}))}>
+            {CATEGORIAS_INGRESO.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <input style={S.input} type="number" placeholder="Monto $" value={formIng.monto} onChange={e=>setFormIng(f=>({...f,monto:e.target.value}))} />
+          <button style={{ background:savedIng?C.green:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"11px 20px", fontWeight:700, fontSize:14, cursor:"pointer", width:"100%" }} onClick={guardarIngreso}>
+            {savedIng?"✓ Guardado":"Guardar ingreso"}
+          </button>
+          {/* Mostrar ingresos cargados */}
+          {Object.keys(ingresosCargados).filter(m=>mesesActivos.includes(m)).reverse().map(m=>(
+            <div key={m} style={{ marginTop:16 }}>
+              <div style={{ fontWeight:700, marginBottom:8, color:C.muted, fontSize:13 }}>{m}</div>
+              {CATEGORIAS_INGRESO.map(ci=>{ const v=ingresosCargados[m]?.[ci.id]; return v?(
+                <div key={ci.id} style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
+                  <span style={{ fontSize:13, color:C.text }}>{ci.label}</span>
+                  <span style={{ fontWeight:700, color:C.green }}>{fmt(v)}</span>
+                </div>
+              ):null;})}
+            </div>
+          ))}
+        </div>
+      ) : (
       <div ref={formRef} style={{ ...S.card, borderColor:editando?C.yellow+"88":C.border }}>
         <div style={{ fontWeight:700, fontSize:15, marginBottom:14, color:editando?C.yellow:C.text }}>{editando?"✏️ Editando gasto":"Cargar gasto"}</div>
         <select style={S.select} value={form.mes} onChange={e=>setForm(f=>({...f,mes:e.target.value}))} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
@@ -428,8 +494,9 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados }) {
           </button>
         </div>
       </div>
+      )}
 
-      {mesesActivos.filter(m=>(gastosCargados[m]||[]).length>0).slice().reverse().map(m=>(
+      {modo==="gasto" && mesesActivos.filter(m=>(gastosCargados[m]||[]).length>0).slice().reverse().map(m=>(
         <div key={m} style={S.card}>
           <div style={{ fontWeight:700, marginBottom:10 }}>{m}</div>
           {(gastosCargados[m]||[]).map((g,i)=>(
@@ -552,6 +619,7 @@ export default function App() {
   const [tab, setTab] = useState("resumen");
   const [mes, setMes] = useState("Junio");
   const [gastosCargados, setGastosCargados] = useState({});
+  const [ingresosCargados, setIngresosCargados] = useState({});
   const [mesesActivos, setMesesActivos] = useState(MESES_HISTORICOS);
   const [mepExtra, setMepExtra] = useState({});
   const [liquidaciones, setLiquidaciones] = useState(LIQ_INIT);
@@ -562,11 +630,12 @@ export default function App() {
   useEffect(()=>{
     (async()=>{
       try {
-        const [gc,ma,me,lq] = await Promise.all([
-          leerDato('gastos_cargados'), leerDato('meses_activos'),
-          leerDato('mep_extra'), leerDato('liquidaciones')
+        const [gc,ic,ma,me,lq] = await Promise.all([
+          leerDato('gastos_cargados'), leerDato('ingresos_cargados'),
+          leerDato('meses_activos'), leerDato('mep_extra'), leerDato('liquidaciones')
         ]);
         if(gc) setGastosCargados(gc);
+        if(ic) setIngresosCargados(ic);
         if(ma) setMesesActivos(ma);
         if(me) setMepExtra(me);
         if(lq) setLiquidaciones({...LIQ_INIT,...lq});
@@ -607,11 +676,11 @@ export default function App() {
         </div>
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}</div>
-      {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} />}
+      {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} />}
-      {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} />}
-      {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} />}
-      {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} />}
+      {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
+      {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} ingresosCargados={ingresosCargados} />}
+      {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} />}
       {tab==="liquidar" && <TabLiquidar mesesActivos={mesesActivos} gastosCargados={gastosCargados} liquidaciones={liquidaciones} setLiquidaciones={setLiquidaciones} />}
       {modalMes&&proximoMes&&(
         <div style={{ position:"fixed", inset:0, background:"#000a", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
