@@ -251,11 +251,32 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
             );
           })
         ) : (
-          cargados.filter(g=>!g.es_ingreso).map((g,i)=>(
-            <MiniBar key={i} label={CATEGORIAS.find(c=>c.id===g.categoria)?.label||g.categoria} value={g.monto} max={t.totalGastos||1} pagador={g.quien} />
-          ))
+          (() => {
+            const gastosNoIngreso = cargados.filter(g=>!g.es_ingreso);
+            const otrosNuevos = gastosNoIngreso.filter(g=>g.categoria==="otros");
+            const otrosTotal = otrosNuevos.reduce((a,b)=>a+b.monto,0);
+            const resto = gastosNoIngreso.filter(g=>g.categoria!=="otros");
+            return (<>
+              {resto.map((g,i)=>(
+                <MiniBar key={i} label={CATEGORIAS.find(c=>c.id===g.categoria)?.label||g.categoria} value={g.monto} max={t.totalGastos||1} pagador={g.quien} />
+              ))}
+              {otrosNuevos.length>0 && (
+                <MiniBar label="Otros del mes" value={otrosTotal} max={t.totalGastos||1} pagador={null}
+                  onExpand={()=>setExpandOtros(e=>!e)} expandido={expandOtros}>
+                  {otrosNuevos.map((g,i)=>(
+                    <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion}</span></div>
+                      <span style={{ fontSize:12, fontWeight:700 }}>{fmt(g.monto)}</span>
+                    </div>
+                  ))}
+                  <div style={S.divider}/>
+                  {["martin","vero","fondo"].map(q=>{ const tot=otrosNuevos.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}
+                </MiniBar>
+              )}
+              {gastosNoIngreso.length===0 && <div style={{ color:C.muted, fontSize:13 }}>Sin gastos cargados este mes</div>}
+            </>);
+          })()
         )}
-        {!esH && cargados.filter(g=>!g.es_ingreso).length===0 && <div style={{ color:C.muted, fontSize:13 }}>Sin gastos cargados este mes</div>}
       </div>
 
       <div style={S.card}>
@@ -617,7 +638,7 @@ function TabLiquidar({ mesesActivos, gastosCargados, liquidaciones, setLiquidaci
 
 export default function App() {
   const [tab, setTab] = useState("resumen");
-  const [mes, setMes] = useState("Junio");
+  const [mes, setMes] = useState(MESES_HISTORICOS[MESES_HISTORICOS.length-1]);
   const [gastosCargados, setGastosCargados] = useState({});
   const [ingresosCargados, setIngresosCargados] = useState({});
   const [mesesActivos, setMesesActivos] = useState(MESES_HISTORICOS);
@@ -636,7 +657,7 @@ export default function App() {
         ]);
         if(gc) setGastosCargados(gc);
         if(ic) setIngresosCargados(ic);
-        if(ma) setMesesActivos(ma);
+        if(ma) { setMesesActivos(ma); setMes(ma[ma.length-1]); }
         if(me) setMepExtra(me);
         if(lq) setLiquidaciones({...LIQ_INIT,...lq});
       } catch(e){ console.error(e); }
