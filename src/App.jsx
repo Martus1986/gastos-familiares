@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from './supabase.js';
 import { leerDato, guardarDato } from './supabase.js';
 
 const MESES_HISTORICOS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio"];
@@ -636,7 +637,54 @@ function TabLiquidar({ mesesActivos, gastosCargados, liquidaciones, setLiquidaci
   );
 }
 
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [pass, setPass] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const login = async () => {
+    if (!email || !pass) return;
+    setLoading(true); setError("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password: pass });
+    if (error) { setError("Email o contraseña incorrectos"); setLoading(false); }
+    else onLogin();
+  };
+
+  return (
+    <div style={{ background:"#0F1117", minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"'Inter',system-ui,sans-serif" }}>
+      <div style={{ background:"#1A1D27", borderRadius:20, padding:32, width:"100%", maxWidth:360, border:"1px solid #2E3147" }}>
+        <div style={{ textAlign:"center", marginBottom:32 }}>
+          <div style={{ fontSize:40, marginBottom:8 }}>💰</div>
+          <div style={{ fontWeight:800, fontSize:22, color:"#E8E9F3" }}>Gastos Familiares</div>
+          <div style={{ color:"#8B8FA8", fontSize:13, marginTop:4 }}>Martus & Vero · 2026</div>
+        </div>
+        <input
+          style={{ background:"#222536", color:"#E8E9F3", border:"1px solid #2E3147", borderRadius:10, padding:"12px 14px", fontSize:14, width:"100%", boxSizing:"border-box", marginBottom:10 }}
+          type="email" placeholder="Email" value={email}
+          onChange={e=>setEmail(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&login()}
+        />
+        <input
+          style={{ background:"#222536", color:"#E8E9F3", border:"1px solid #2E3147", borderRadius:10, padding:"12px 14px", fontSize:14, width:"100%", boxSizing:"border-box", marginBottom:16 }}
+          type="password" placeholder="Contraseña" value={pass}
+          onChange={e=>setPass(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&login()}
+        />
+        {error && <div style={{ color:"#F87171", fontSize:13, marginBottom:12, textAlign:"center" }}>{error}</div>}
+        <button
+          onClick={login} disabled={loading}
+          style={{ background:"#6C63FF", color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:700, fontSize:15, cursor:"pointer", width:"100%", opacity:loading?0.7:1 }}>
+          {loading ? "Ingresando..." : "Ingresar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  const [session, setSession] = useState(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const [tab, setTab] = useState("resumen");
   const [mes, setMes] = useState(MESES_HISTORICOS[MESES_HISTORICOS.length-1]);
   const [gastosCargados, setGastosCargados] = useState({});
@@ -649,6 +697,18 @@ export default function App() {
   const [cargando, setCargando] = useState(true);
 
   useEffect(()=>{
+    // Check auth session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setCheckingAuth(false);
+    });
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+  }, []);
+
+  useEffect(()=>{
+    if (!session) return;
     (async()=>{
       try {
         const [gc,ic,ma,me,lq] = await Promise.all([
@@ -663,7 +723,7 @@ export default function App() {
       } catch(e){ console.error(e); }
       setCargando(false);
     })();
-  },[]);
+  },[session]);
 
   const proximoMes = TODOS_LOS_MESES[TODOS_LOS_MESES.indexOf(mesesActivos[mesesActivos.length-1])+1];
 
@@ -681,6 +741,8 @@ export default function App() {
     setModalMes(false); setMepNuevoMes("");
   };
 
+  if (checkingAuth) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
+  if (!session) return <LoginScreen onLogin={()=>{}} />;
   if (cargando) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
 
   const TABS=[{id:"resumen",label:"Resumen"},{id:"alq",label:"Alquileres"},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"cargar",label:"+ Cargar"},{id:"liquidar",label:"💸 Liquidar"}];
@@ -693,7 +755,10 @@ export default function App() {
             <div style={{ fontWeight:800, fontSize:20, letterSpacing:-0.5 }}>💰 Gastos Familiares</div>
             <div style={{ color:C.muted, fontSize:12, marginTop:2 }}>Martus & Vero · 2026</div>
           </div>
-          {proximoMes&&<button onClick={()=>setModalMes(true)} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ {proximoMes}</button>}
+          <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+            {proximoMes&&<button onClick={()=>setModalMes(true)} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ {proximoMes}</button>}
+            <button onClick={()=>supabase.auth.signOut()} style={{ background:"transparent", color:C.muted, border:`1px solid ${C.border}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Salir</button>
+          </div>
         </div>
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}</div>
