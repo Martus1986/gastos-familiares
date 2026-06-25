@@ -313,21 +313,27 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
   );
 }
 
-function TabAlquileres({ mes, setMes, mesesActivos, mepExtra }) {
-  const props = [{id:"alq_sanmartin",label:"San Martín",costoKey:null},{id:"alq_cdp547",label:"CDP 547",costoKey:"expensas_cdp547"},{id:"alq_fitzroy",label:"Fitz Roy",costoKey:"expensas_fitzroy"},{id:"guarderia_coto",label:"Guardería Coto",costoKey:null}];
-  const ing=INGRESOS_2026[mes]||{}, fijos=GASTOS_FIJOS_2026[mes]||{}, mep=getMep(mes,mepExtra);
+function TabAlquileres({ mes, setMes, mesesActivos, mepExtra, ingresosCargados }) {
+  const props = [{id:"alq_sanmartin",label:"San Martín",costoKey:null},{id:"alq_cdp547",label:"CDP 547",costoKey:null},{id:"alq_fitzroy",label:"Fitz Roy",costoKeys:["expensas_fitzroy","luz_fitzroy","internet_fitzroy"]},{id:"guarderia_coto",label:"Guardería Coto",costoKey:null}];
+  const ing=getIngresos(mes,ingresosCargados), fijos=GASTOS_FIJOS_2026[mes]||{}, mep=getMep(mes,mepExtra);
   return (
     <div style={S.section}>
       <select style={S.select} value={mes} onChange={e=>setMes(e.target.value)}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
-      {props.map(p=>{ const i=ing[p.id]||0, c=p.costoKey?(fijos[p.costoKey]||0):0, n=i-c; return (
-        <div key={p.id} style={S.card}>
-          <div style={{ fontWeight:700, fontSize:15, marginBottom:10 }}>{p.label}</div>
-          <div style={S.row}><span style={S.label}>Ingreso</span><span style={{ fontWeight:600, color:C.green }}>{fmt(i)}</span></div>
-          {c>0&&<div style={S.row}><span style={S.label}>Expensas</span><span style={{ fontWeight:600, color:C.red }}>-{fmt(c)}</span></div>}
-          <div style={S.divider}/>
-          <div style={S.row}><span style={{ fontWeight:700 }}>Neto</span><div style={{ textAlign:"right" }}><div style={{ fontWeight:800, color:n>=0?C.green:C.red }}>{fmt(n)}</div><div style={{ color:C.muted, fontSize:11 }}>{fmtUSD(n/mep)}</div></div></div>
-        </div>
-      );})}
+      {props.map(p=>{ 
+        const i=ing[p.id]||0;
+        const c = p.costoKeys ? p.costoKeys.reduce((a,k)=>a+(fijos[k]||0),0) : (p.costoKey?(fijos[p.costoKey]||0):0);
+        const n=i-c; 
+        return (
+          <div key={p.id} style={S.card}>
+            <div style={{ fontWeight:700, fontSize:15, marginBottom:10 }}>{p.label}</div>
+            <div style={S.row}><span style={S.label}>Ingreso</span><span style={{ fontWeight:600, color:C.green }}>{fmt(i)}</span></div>
+            {p.costoKeys && p.costoKeys.map(k=> fijos[k]>0 ? <div key={k} style={S.row}><span style={S.label}>{CATEGORIAS.find(c=>c.id===k)?.label||k}</span><span style={{ fontWeight:600, color:C.red }}>-{fmt(fijos[k])}</span></div> : null)}
+            {p.costoKey && c>0 && <div style={S.row}><span style={S.label}>Expensas</span><span style={{ fontWeight:600, color:C.red }}>-{fmt(c)}</span></div>}
+            <div style={S.divider}/>
+            <div style={S.row}><span style={{ fontWeight:700 }}>Neto</span><div style={{ textAlign:"right" }}><div style={{ fontWeight:800, color:n>=0?C.green:C.red }}>{fmt(n)}</div><div style={{ color:C.muted, fontSize:11 }}>{fmtUSD(n/mep)}</div></div></div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -435,7 +441,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
   };
 
   const guardar = async () => {
-    if (!form.monto||parseFloat(form.monto)<=0) return;
+    if (!form.monto||isNaN(parseFloat(form.monto))) return;
     if (form.categoria==="otros"&&!form.descripcion.trim()) return;
     const item = { categoria:form.categoria, descripcion:form.descripcion.trim()||CATEGORIAS.find(c=>c.id===form.categoria)?.label, monto:parseFloat(form.monto), quien:form.quien, fecha:new Date().toLocaleDateString("es-AR") };
     let updated;
@@ -682,6 +688,146 @@ function LoginScreen({ onLogin }) {
   );
 }
 
+
+// ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
+function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
+  const rows = [];
+  // Header
+  rows.push(['Mes','Categoría','Descripción','Monto ARS','Quién pagó','Fecha']);
+  mesesActivos.forEach(mes => {
+    const fijos = GASTOS_FIJOS_2026[mes]||{};
+    const esH = MESES_HISTORICOS.includes(mes);
+    if (esH) {
+      CATEGORIAS.forEach(cat => {
+        const v = fijos[cat.id];
+        if (v) rows.push([mes, cat.label, '', v, PAGADOR_2026[cat.id]?.[mes]||'', '']);
+      });
+    }
+    (gastosCargados[mes]||[]).forEach(g => {
+      rows.push([mes, CATEGORIAS.find(c=>c.id===g.categoria)?.label||g.categoria, g.descripcion||'', g.monto, PL[g.quien]||g.quien, g.fecha||'']);
+    });
+    // Ingresos
+    const ing = getIngresos(mes, ingresosCargados);
+    CATEGORIAS_INGRESO.forEach(ci => {
+      if (ing[ci.id]) rows.push([mes, 'INGRESO - '+ci.label, '', ing[ci.id], '', '']);
+    });
+    // Liquidación
+    const liq = liquidaciones[mes];
+    if (liq?.saldado) rows.push([mes, 'LIQUIDACIÓN', liq.nota||'', liq.montoPagado||'', liq.metodo||'', liq.fecha||'']);
+  });
+
+  // Build CSV
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'gastos-familiares-2026.csv';
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── TAB RENTABILIDAD ──────────────────────────────────────────────────────────
+function TabRentabilidad({ mesesActivos, mepExtra, ingresosCargados, gastosCargados, valorProps, setValorProps }) {
+  const [editando, setEditando] = useState(false);
+  const [formVP, setFormVP] = useState({ cdp547:'', sanmartin:'', fitzroy:'' });
+
+  const guardarValores = async () => {
+    const upd = { cdp547: parseFloat(formVP.cdp547)||valorProps.cdp547, sanmartin: parseFloat(formVP.sanmartin)||valorProps.sanmartin, fitzroy: parseFloat(formVP.fitzroy)||valorProps.fitzroy };
+    setValorProps(upd);
+    await guardarDato('valor_propiedades', upd);
+    setEditando(false);
+  };
+
+  const propiedades = [
+    { id:'cdp547', label:'CDP 547', ingKey:'alq_cdp547', costoKeys:[] },
+    { id:'sanmartin', label:'San Martín', ingKey:'alq_sanmartin', costoKeys:[] },
+    { id:'fitzroy', label:'Fitz Roy', ingKey:'alq_fitzroy', costoKeys:['expensas_fitzroy','luz_fitzroy','internet_fitzroy'] },
+  ];
+
+  // Calcular promedio de ingresos netos por propiedad
+  const calcRent = (prop) => {
+    const valores = mesesActivos.map(mes => {
+      const ing = getIngresos(mes, ingresosCargados);
+      const fijos = GASTOS_FIJOS_2026[mes]||{};
+      const ingreso = ing[prop.ingKey]||0;
+      const costos = prop.costoKeys.reduce((a,k)=>a+(fijos[k]||0),0);
+      return ingreso - costos;
+    }).filter(v=>v>0);
+    const promMensual = valores.length ? valores.reduce((a,b)=>a+b,0)/valores.length : 0;
+    const mep = getMep(mesesActivos[mesesActivos.length-1], mepExtra);
+    const valorUSD = valorProps[prop.id]||0;
+    const promMensualUSD = promMensual/mep;
+    const rentMensual = valorUSD ? (promMensualUSD/valorUSD)*100 : 0;
+    const rentAnual = rentMensual*12;
+    return { promMensual, promMensualUSD, rentMensual, rentAnual, valorUSD };
+  };
+
+  return (
+    <div style={S.section}>
+      <div style={{ fontWeight:800, fontSize:16, marginBottom:4 }}>Rentabilidad de alquileres</div>
+      <div style={{ color:C.muted, fontSize:12, marginBottom:14 }}>Basado en el promedio de meses con datos</div>
+
+      {/* Valores de propiedades */}
+      <div style={S.card}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+          <span style={{ fontWeight:700, fontSize:14 }}>Valor de propiedades (USD)</span>
+          <button onClick={()=>{ setFormVP({cdp547:valorProps.cdp547||'',sanmartin:valorProps.sanmartin||'',fitzroy:valorProps.fitzroy||''}); setEditando(true); }} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:8, padding:"6px 12px", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+            {editando?"Cancelar":"✏️ Editar"}
+          </button>
+        </div>
+        {editando ? (<>
+          {[['cdp547','CDP 547'],['sanmartin','San Martín'],['fitzroy','Fitz Roy']].map(([k,l])=>(
+            <div key={k} style={{ marginBottom:8 }}>
+              <div style={{ color:C.muted, fontSize:12, marginBottom:4 }}>{l}</div>
+              <input style={S.input} type="number" placeholder={`Valor en USD`} value={formVP[k]} onChange={e=>setFormVP(f=>({...f,[k]:e.target.value}))} />
+            </div>
+          ))}
+          <button style={{ ...S.btn(C.accent), border:"none", marginTop:4 }} onClick={guardarValores}>Guardar valores</button>
+        </>) : (
+          [['cdp547','CDP 547'],['sanmartin','San Martín'],['fitzroy','Fitz Roy']].map(([k,l])=>(
+            <div key={k} style={S.row}>
+              <span style={S.label}>{l}</span>
+              <span style={{ fontWeight:700 }}>{valorProps[k] ? fmtUSD(valorProps[k]) : <span style={{ color:C.muted, fontSize:12 }}>Sin valor</span>}</span>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Rentabilidad por propiedad */}
+      {propiedades.map(prop => {
+        const r = calcRent(prop);
+        const sinValor = !r.valorUSD;
+        return (
+          <div key={prop.id} style={S.card}>
+            <div style={{ fontWeight:700, fontSize:15, marginBottom:10 }}>{prop.label}</div>
+            <div style={S.row}><span style={S.label}>Ingreso neto promedio</span><span style={{ fontWeight:600, color:C.green }}>{fmt(r.promMensual)}</span></div>
+            <div style={S.row}><span style={S.label}>En USD</span><span style={{ fontWeight:600, color:C.green }}>{fmtUSD(r.promMensualUSD)}</span></div>
+            {prop.costoKeys.length>0 && <div style={{ color:C.muted, fontSize:11, marginBottom:8 }}>* Neto de expensas, luz e internet</div>}
+            <div style={S.divider}/>
+            {sinValor ? (
+              <div style={{ color:C.yellow, fontSize:13, textAlign:"center" }}>Cargá el valor de la propiedad para ver la rentabilidad</div>
+            ) : (<>
+              <div style={S.row}>
+                <span style={S.label}>Valor propiedad</span>
+                <span style={{ fontWeight:600 }}>{fmtUSD(r.valorUSD)}</span>
+              </div>
+              <div style={{ display:"flex", gap:8, marginTop:8 }}>
+                <div style={{ flex:1, background:C.accent+"11", borderRadius:10, padding:"10px", textAlign:"center" }}>
+                  <div style={{ color:C.muted, fontSize:11 }}>Rent. mensual</div>
+                  <div style={{ fontWeight:800, fontSize:18, color:C.accent }}>{r.rentMensual.toFixed(2)}%</div>
+                </div>
+                <div style={{ flex:1, background:C.green+"11", borderRadius:10, padding:"10px", textAlign:"center" }}>
+                  <div style={{ color:C.muted, fontSize:11 }}>Rent. anual</div>
+                  <div style={{ fontWeight:800, fontSize:18, color:C.green }}>{r.rentAnual.toFixed(2)}%</div>
+                </div>
+              </div>
+            </>)}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -692,6 +838,7 @@ export default function App() {
   const [mesesActivos, setMesesActivos] = useState(MESES_HISTORICOS);
   const [mepExtra, setMepExtra] = useState({});
   const [liquidaciones, setLiquidaciones] = useState(LIQ_INIT);
+  const [valorProps, setValorProps] = useState({ cdp547:0, sanmartin:0, fitzroy:0 });
   const [modalMes, setModalMes] = useState(false);
   const [mepNuevoMes, setMepNuevoMes] = useState("");
   const [cargando, setCargando] = useState(true);
@@ -711,15 +858,17 @@ export default function App() {
     if (!session) return;
     (async()=>{
       try {
-        const [gc,ic,ma,me,lq] = await Promise.all([
+        const [gc,ic,ma,me,lq,vp] = await Promise.all([
           leerDato('gastos_cargados'), leerDato('ingresos_cargados'),
-          leerDato('meses_activos'), leerDato('mep_extra'), leerDato('liquidaciones')
+          leerDato('meses_activos'), leerDato('mep_extra'), leerDato('liquidaciones'),
+          leerDato('valor_propiedades')
         ]);
         if(gc) setGastosCargados(gc);
         if(ic) setIngresosCargados(ic);
         if(ma) { setMesesActivos(ma); setMes(ma[ma.length-1]); }
         if(me) setMepExtra(me);
         if(lq) setLiquidaciones({...LIQ_INIT,...lq});
+        if(vp) setValorProps(vp);
       } catch(e){ console.error(e); }
       setCargando(false);
     })();
@@ -745,7 +894,7 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={()=>{}} />;
   if (cargando) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
 
-  const TABS=[{id:"resumen",label:"Resumen"},{id:"alq",label:"Alquileres"},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"cargar",label:"+ Cargar"},{id:"liquidar",label:"💸 Liquidar"}];
+  const TABS=[{id:"resumen",label:"Resumen"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"cargar",label:"+ Cargar"},{id:"liquidar",label:"💸 Liquidar"}];
 
   return (
     <div style={S.app}>
@@ -757,13 +906,15 @@ export default function App() {
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             {proximoMes&&<button onClick={()=>setModalMes(true)} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ {proximoMes}</button>}
+            <button onClick={()=>exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra)} style={{ background:C.green+"22", color:C.green, border:`1px solid ${C.green}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>📥 Excel</button>
             <button onClick={()=>supabase.auth.signOut()} style={{ background:"transparent", color:C.muted, border:`1px solid ${C.border}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Salir</button>
           </div>
         </div>
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}</div>
       {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
-      {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} />}
+      {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
+      {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} ingresosCargados={ingresosCargados} />}
       {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} />}
