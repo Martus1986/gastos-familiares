@@ -486,7 +486,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
           <select style={S.select} value={formIng.tipo} onChange={e=>setFormIng(f=>({...f,tipo:e.target.value}))}>
             {CATEGORIAS_INGRESO.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
-          <input style={S.input} type="number" placeholder="Monto $" value={formIng.monto} onChange={e=>setFormIng(f=>({...f,monto:e.target.value}))} />
+          <input style={S.input} type="text" inputMode="decimal" placeholder="Monto $" value={formIng.monto} onChange={e=>setFormIng(f=>({...f,monto:e.target.value}))} />
           <button style={{ background:savedIng?C.green:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"11px 20px", fontWeight:700, fontSize:14, cursor:"pointer", width:"100%" }} onClick={guardarIngreso}>
             {savedIng?"✓ Guardado":"Guardar ingreso"}
           </button>
@@ -509,7 +509,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
         <select style={S.select} value={form.mes} onChange={e=>setForm(f=>({...f,mes:e.target.value}))} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
         <select style={S.select} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CATEGORIAS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
         {(form.categoria==="otros"||editando) && <input style={S.input} placeholder={form.categoria==="otros"?"Descripción (obligatorio)":"Descripción (opcional)"} value={form.descripcion} onChange={e=>setForm(f=>({...f,descripcion:e.target.value}))} />}
-        <input style={S.input} type="number" placeholder="Monto $" value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))} />
+        <input style={S.input} type="text" inputMode="decimal" placeholder="Monto $ (negativo con -)" value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))} />
         <div style={{ display:"flex", gap:8, marginBottom:14 }}>
           {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"]].map(([q,l])=>(
             <button key={q} onClick={()=>setForm(f=>({...f,quien:q}))} style={{ flex:1, padding:"10px 4px", borderRadius:10, border:`2px solid ${form.quien===q?PC[q]:C.border}`, background:form.quien===q?PC[q]+"22":"transparent", color:PC[q], fontWeight:700, cursor:"pointer", fontSize:13 }}>{l}</button>
@@ -841,6 +841,9 @@ export default function App() {
   const [valorProps, setValorProps] = useState({ cdp547:0, sanmartin:0, fitzroy:0 });
   const [modalMes, setModalMes] = useState(false);
   const [mepNuevoMes, setMepNuevoMes] = useState("");
+  const [modalMep, setModalMep] = useState(false);
+  const [mepEditMes, setMepEditMes] = useState("");
+  const [mepEditValor, setMepEditValor] = useState("");
   const [cargando, setCargando] = useState(true);
 
   useEffect(()=>{
@@ -890,6 +893,14 @@ export default function App() {
     setModalMes(false); setMepNuevoMes("");
   };
 
+  const guardarMep = async () => {
+    if (!mepEditValor || parseFloat(mepEditValor) <= 0) return;
+    const updMep = { ...mepExtra, [mepEditMes]: parseFloat(mepEditValor) };
+    setMepExtra(updMep);
+    await guardarDato('mep_extra', updMep);
+    setModalMep(false); setMepEditValor("");
+  };
+
   if (checkingAuth) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
   if (!session) return <LoginScreen onLogin={()=>{}} />;
   if (cargando) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
@@ -906,6 +917,7 @@ export default function App() {
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             {proximoMes&&<button onClick={()=>setModalMes(true)} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ {proximoMes}</button>}
+            <button onClick={()=>{ setMepEditMes(mesesActivos[mesesActivos.length-1]); setMepEditValor(String(getMep(mesesActivos[mesesActivos.length-1],mepExtra))); setModalMep(true); }} style={{ background:C.yellow+"22", color:C.yellow, border:`1px solid ${C.yellow}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>MEP</button>
             <button onClick={()=>exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra)} style={{ background:C.green+"22", color:C.green, border:`1px solid ${C.green}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>📥 Excel</button>
             <button onClick={()=>supabase.auth.signOut()} style={{ background:"transparent", color:C.muted, border:`1px solid ${C.border}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Salir</button>
           </div>
@@ -929,6 +941,23 @@ export default function App() {
             <div style={{ display:"flex", gap:10 }}>
               <button style={S.btn(C.muted,true)} onClick={()=>setModalMes(false)}>Cancelar</button>
               <button style={{ ...S.btn(C.accent), border:"none", flex:2 }} onClick={activarMes}>Activar {proximoMes}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {modalMep&&(
+        <div style={{ position:"fixed", inset:0, background:"#000a", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
+          <div style={{ background:C.surface, borderRadius:20, padding:24, width:"100%", maxWidth:360, border:`1px solid ${C.border}` }}>
+            <div style={{ fontWeight:800, fontSize:18, marginBottom:8 }}>Editar MEP</div>
+            <div style={{ color:C.muted, fontSize:14, marginBottom:14 }}>Mes:</div>
+            <select style={S.select} value={mepEditMes} onChange={e=>{ setMepEditMes(e.target.value); setMepEditValor(String(getMep(e.target.value,mepExtra))); }}>
+              {mesesActivos.map(m=><option key={m}>{m}</option>)}
+            </select>
+            <input style={S.input} type="text" inputMode="decimal" placeholder="Valor MEP (ej: 1450)" value={mepEditValor} onChange={e=>setMepEditValor(e.target.value)} />
+            <div style={{ color:C.muted, fontSize:12, marginBottom:16 }}>Valor actual: ${getMep(mepEditMes,mepExtra)}</div>
+            <div style={{ display:"flex", gap:10 }}>
+              <button style={S.btn(C.muted,true)} onClick={()=>setModalMep(false)}>Cancelar</button>
+              <button style={{ ...S.btn(C.yellow), border:"none", flex:2, color:"#000" }} onClick={guardarMep}>Guardar MEP</button>
             </div>
           </div>
         </div>
