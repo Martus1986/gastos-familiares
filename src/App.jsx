@@ -186,7 +186,7 @@ function MiniBar({ label, value, max, pagador, onExpand, expandido, children }) 
   );
 }
 
-function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingresosCargados }) {
+function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingresosCargados, setMepEditMes, setMepEditValor, setModalMep }) {
   const [expandOtros, setExpandOtros] = useState(false);
   const t = calcTotales(mes, gastosCargados, mepExtra, ingresosCargados);
   const fijos = GASTOS_FIJOS_2026[mes]||{};
@@ -223,7 +223,10 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
         </div>
         <div style={{ ...S.card, flex:1, marginBottom:0 }}>
           <div style={{ color:C.muted, fontSize:11, marginBottom:3 }}>MEP</div>
-          <div style={{ fontWeight:800, fontSize:15, color:C.yellow }}>${getMep(mes,mepExtra)}</div>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div style={{ fontWeight:800, fontSize:15, color:C.yellow }}>${getMep(mes,mepExtra)}</div>
+            <button onClick={()=>{ setMepEditMes(mes); setMepEditValor(String(getMep(mes,mepExtra))); setModalMep(true); }} style={{ background:C.yellow+"22", color:C.yellow, border:"none", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:600, cursor:"pointer" }}>✏️</button>
+          </div>
           <div style={{ color:C.muted, fontSize:11 }}>ARS/USD</div>
         </div>
       </div>
@@ -509,7 +512,10 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
         <select style={S.select} value={form.mes} onChange={e=>setForm(f=>({...f,mes:e.target.value}))} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
         <select style={S.select} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CATEGORIAS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
         {(form.categoria==="otros"||editando) && <input style={S.input} placeholder={form.categoria==="otros"?"Descripción (obligatorio)":"Descripción (opcional)"} value={form.descripcion} onChange={e=>setForm(f=>({...f,descripcion:e.target.value}))} />}
-        <input style={S.input} type="text" inputMode="decimal" placeholder="Monto $ (negativo con -)" value={form.monto} onChange={e=>setForm(f=>({...f,monto:e.target.value}))} />
+        <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+          <button onClick={()=>setForm(f=>({...f,monto:f.monto.startsWith("-")?f.monto.slice(1):"-"+f.monto}))} style={{ background:form.monto.startsWith("-")?C.red+"33":"transparent", color:form.monto.startsWith("-")?C.red:C.muted, border:`2px solid ${form.monto.startsWith("-")?C.red:C.border}`, borderRadius:10, padding:"10px 14px", fontWeight:800, fontSize:18, cursor:"pointer", flexShrink:0 }}>−</button>
+          <input style={{ ...S.input, marginBottom:0, flex:1 }} type="text" inputMode="decimal" placeholder="Monto $" value={form.monto.startsWith("-")?form.monto.slice(1):form.monto} onChange={e=>setForm(f=>({...f,monto:f.monto.startsWith("-")?"-"+e.target.value:e.target.value}))} />
+        </div>
         <div style={{ display:"flex", gap:8, marginBottom:14 }}>
           {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"]].map(([q,l])=>(
             <button key={q} onClick={()=>setForm(f=>({...f,quien:q}))} style={{ flex:1, padding:"10px 4px", borderRadius:10, border:`2px solid ${form.quien===q?PC[q]:C.border}`, background:form.quien===q?PC[q]+"22":"transparent", color:PC[q], fontWeight:700, cursor:"pointer", fontSize:13 }}>{l}</button>
@@ -917,14 +923,14 @@ export default function App() {
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
             {proximoMes&&<button onClick={()=>setModalMes(true)} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ {proximoMes}</button>}
-            <button onClick={()=>{ setMepEditMes(mesesActivos[mesesActivos.length-1]); setMepEditValor(String(getMep(mesesActivos[mesesActivos.length-1],mepExtra))); setModalMep(true); }} style={{ background:C.yellow+"22", color:C.yellow, border:`1px solid ${C.yellow}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>MEP</button>
+
             <button onClick={()=>exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra)} style={{ background:C.green+"22", color:C.green, border:`1px solid ${C.green}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>📥 Excel</button>
             <button onClick={()=>supabase.auth.signOut()} style={{ background:"transparent", color:C.muted, border:`1px solid ${C.border}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Salir</button>
           </div>
         </div>
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}</div>
-      {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
+      {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} setMepEditMes={setMepEditMes} setMepEditValor={setMepEditValor} setModalMep={setModalMep} />}
       {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
