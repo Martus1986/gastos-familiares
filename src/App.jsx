@@ -90,10 +90,10 @@ const fmtUSD = n => `U$D ${Math.round(n||0).toLocaleString("es-AR")}`;
 const getMep = (mes, mepExtra) => mepExtra[mes] || MEP_HISTORICO[mes] || 1400;
 
 const CATEGORIAS_INGRESO = [
-  { id:"alq_sanmartin",  label:"Alquiler San Martín" },
-  { id:"guarderia_coto", label:"Guardería Coto" },
-  { id:"alq_cdp547",    label:"Alquiler CDP 547" },
-  { id:"alq_fitzroy",   label:"Alquiler Fitz Roy" },
+  { id:"alq_sanmartin",  label:"Alquiler San Martín", usd:false },
+  { id:"guarderia_coto", label:"Guardería Coto", usd:false },
+  { id:"alq_cdp547",    label:"Alquiler CDP 547", usd:false },
+  { id:"alq_fitzroy",   label:"Alquiler Fitz Roy", usd:true },
 ];
 
 function getIngresos(mes, ingresosCargados) {
@@ -203,7 +203,7 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
 
   return (
     <div style={S.section}>
-      <select style={S.select} value={mes} onChange={e=>setMes(e.target.value)}>
+      <select style={S.select} value={mes} onChange={e=>{setMes(e.target.value);sessionStorage.setItem("ultimoMes",e.target.value);}}>
         {mesesActivos.map(m=><option key={m}>{m}</option>)}
       </select>
       <div style={{ display:"flex", gap:8, marginBottom:8 }}>
@@ -435,12 +435,32 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
 
   const guardarIngreso = async () => {
     if (!formIng.monto||parseFloat(formIng.monto)<=0) return;
-    const updated = { ...ingresosCargados, [formIng.mes]: { ...(ingresosCargados[formIng.mes]||{}), [formIng.tipo]: parseFloat(formIng.monto) }};
+    const catIng = CATEGORIAS_INGRESO.find(c=>c.id===formIng.tipo);
+    const mep = getMep(formIng.mes, mepExtra);
+    // If USD, convert to ARS for storage
+    const montoARS = catIng?.usd ? parseFloat(formIng.monto)*mep : parseFloat(formIng.monto);
+    const updated = { ...ingresosCargados, [formIng.mes]: { ...(ingresosCargados[formIng.mes]||{}), [formIng.tipo]: montoARS }};
     setIngresosCargados(updated);
     await guardarDato('ingresos_cargados', updated);
     setSavedIng(true);
     setFormIng(f=>({...f, monto:""}));
     setTimeout(()=>setSavedIng(false), 2000);
+  };
+
+  const editarIngreso = (mes, tipo, valorARS) => {
+    const catIng = CATEGORIAS_INGRESO.find(c=>c.id===tipo);
+    const mep = getMep(mes, mepExtra);
+    const valorMostrar = catIng?.usd ? (valorARS/mep).toFixed(0) : valorARS;
+    setFormIng({ mes, tipo, monto: String(valorMostrar) });
+    setModo("ingreso");
+    window.scrollTo({top:0,behavior:"smooth"});
+  };
+
+  const eliminarIngreso = async (mes, tipo) => {
+    const updated = { ...ingresosCargados, [mes]: { ...(ingresosCargados[mes]||{}) }};
+    delete updated[mes][tipo];
+    setIngresosCargados(updated);
+    await guardarDato('ingresos_cargados', updated);
   };
 
   const guardar = async () => {
@@ -486,10 +506,13 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
         <div style={S.card}>
           <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>Cargar ingreso</div>
           <select style={S.select} value={formIng.mes} onChange={e=>setFormIng(f=>({...f,mes:e.target.value}))}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
-          <select style={S.select} value={formIng.tipo} onChange={e=>setFormIng(f=>({...f,tipo:e.target.value}))}>
-            {CATEGORIAS_INGRESO.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}
+          <select style={S.select} value={formIng.tipo} onChange={e=>setFormIng(f=>({...f,tipo:e.target.value,monto:""}))}>
+            {CATEGORIAS_INGRESO.map(c=><option key={c.id} value={c.id}>{c.label}{c.usd?" (USD)":""}</option>)}
           </select>
-          <input style={S.input} type="text" inputMode="decimal" placeholder="Monto $" value={formIng.monto} onChange={e=>setFormIng(f=>({...f,monto:e.target.value}))} />
+          {(() => { const catIng=CATEGORIAS_INGRESO.find(c=>c.id===formIng.tipo); const mep=getMep(formIng.mes,mepExtra); return (<>
+            <input style={S.input} type="text" inputMode="decimal" placeholder={catIng?.usd?"Monto USD":"Monto $"} value={formIng.monto} onChange={e=>setFormIng(f=>({...f,monto:e.target.value}))} />
+            {catIng?.usd && formIng.monto && parseFloat(formIng.monto)>0 && <div style={{ color:C.muted, fontSize:12, marginBottom:10 }}>= {fmt(parseFloat(formIng.monto)*mep)} (MEP ${mep})</div>}
+          </>); })()}
           <button style={{ background:savedIng?C.green:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"11px 20px", fontWeight:700, fontSize:14, cursor:"pointer", width:"100%" }} onClick={guardarIngreso}>
             {savedIng?"✓ Guardado":"Guardar ingreso"}
           </button>
@@ -498,9 +521,16 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
             <div key={m} style={{ marginTop:16 }}>
               <div style={{ fontWeight:700, marginBottom:8, color:C.muted, fontSize:13 }}>{m}</div>
               {CATEGORIAS_INGRESO.map(ci=>{ const v=ingresosCargados[m]?.[ci.id]; return v?(
-                <div key={ci.id} style={{ display:"flex", justifyContent:"space-between", marginBottom:6 }}>
-                  <span style={{ fontSize:13, color:C.text }}>{ci.label}</span>
-                  <span style={{ fontWeight:700, color:C.green }}>{fmt(v)}</span>
+                <div key={ci.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                  <div>
+                    <span style={{ fontSize:13, color:C.text }}>{ci.label}</span>
+                    {ci.usd && <span style={{ fontSize:11, color:C.muted }}> · {fmtUSD(v/getMep(m,mepExtra))}</span>}
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <span style={{ fontWeight:700, color:C.green }}>{fmt(v)}</span>
+                    <button onClick={()=>editarIngreso(m,ci.id,v)} style={{ background:"none", border:"none", color:C.accent, cursor:"pointer", fontSize:16, padding:0 }}>✏️</button>
+                    <button onClick={()=>eliminarIngreso(m,ci.id)} style={{ background:"none", border:"none", color:C.muted, cursor:"pointer", fontSize:18, padding:0 }}>×</button>
+                  </div>
                 </div>
               ):null;})}
             </div>
@@ -874,7 +904,7 @@ export default function App() {
         ]);
         if(gc) setGastosCargados(gc);
         if(ic) setIngresosCargados(ic);
-        if(ma) { setMesesActivos(ma); setMes(ma[ma.length-1]); }
+        if(ma) { setMesesActivos(ma); const lastMes=sessionStorage.getItem("ultimoMes"); setMes(lastMes&&ma.includes(lastMes)?lastMes:ma[ma.length-1]); }
         if(me) setMepExtra(me);
         if(lq) setLiquidaciones({...LIQ_INIT,...lq});
         if(vp) setValorProps(vp);
@@ -911,7 +941,7 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={()=>{}} />;
   if (cargando) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
 
-  const TABS=[{id:"resumen",label:"Resumen"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"cargar",label:"+ Cargar"},{id:"liquidar",label:"💸 Liquidar"}];
+  const TABS=[{id:"resumen",label:"Resumen"},{id:"cargar",label:"+ Cargar"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"liquidar",label:"💸 Liquidar"}];
 
   return (
     <div style={S.app}>
