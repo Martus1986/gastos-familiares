@@ -423,7 +423,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
   );
 }
 
-function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra }) {
+function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra, mes, setMes }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
   const [modo, setModo] = useState("gasto"); // "gasto" | "ingreso"
   const [form, setForm] = useState({ mes:mesDefault, categoria:"otros", descripcion:"", monto:"", quien:"martin" });
@@ -505,7 +505,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
       {modo==="ingreso" ? (
         <div style={S.card}>
           <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>Cargar ingreso</div>
-          <select style={S.select} value={formIng.mes} onChange={e=>{setFormIng(f=>({...f,mes:e.target.value}));localStorage.setItem("ultimoMes",e.target.value);}}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
+          <select style={S.select} value={formIng.mes} onChange={e=>{setFormIng(f=>({...f,mes:e.target.value}));setMes(e.target.value);localStorage.setItem("ultimoMes",e.target.value);}}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
           <select style={S.select} value={formIng.tipo} onChange={e=>setFormIng(f=>({...f,tipo:e.target.value,monto:""}))}>
             {CATEGORIAS_INGRESO.map(c=><option key={c.id} value={c.id}>{c.label}{c.usd?" (USD)":""}</option>)}
           </select>
@@ -539,7 +539,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
       ) : (
       <div ref={formRef} style={{ ...S.card, borderColor:editando?C.yellow+"88":C.border }}>
         <div style={{ fontWeight:700, fontSize:15, marginBottom:14, color:editando?C.yellow:C.text }}>{editando?"✏️ Editando gasto":"Cargar gasto"}</div>
-        <select style={S.select} value={form.mes} onChange={e=>{setForm(f=>({...f,mes:e.target.value}));localStorage.setItem("ultimoMes",e.target.value);}} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
+        <select style={S.select} value={form.mes} onChange={e=>{setForm(f=>({...f,mes:e.target.value}));setMes(e.target.value);localStorage.setItem("ultimoMes",e.target.value);}} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
         <select style={S.select} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CATEGORIAS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
         {(form.categoria==="otros"||editando) && <input style={S.input} placeholder={form.categoria==="otros"?"Descripción (obligatorio)":"Descripción (opcional)"} value={form.descripcion} onChange={e=>setForm(f=>({...f,descripcion:e.target.value}))} />}
         <div style={{ display:"flex", gap:8, marginBottom:10 }}>
@@ -867,8 +867,8 @@ function TabRentabilidad({ mesesActivos, mepExtra, ingresosCargados, gastosCarga
 export default function App() {
   const [session, setSession] = useState(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
-  const [tab, setTab] = useState("resumen");
-  const [mes, setMes] = useState(MESES_HISTORICOS[MESES_HISTORICOS.length-1]);
+  const [tab, setTab] = useState(()=>localStorage.getItem("ultimaTab")||"resumen");
+  const [mes, setMes] = useState(()=>{ const last=localStorage.getItem("ultimoMes"); return last||MESES_HISTORICOS[MESES_HISTORICOS.length-1]; });
   const [gastosCargados, setGastosCargados] = useState({});
   const [ingresosCargados, setIngresosCargados] = useState({});
   const [mesesActivos, setMesesActivos] = useState(MESES_HISTORICOS);
@@ -959,13 +959,13 @@ export default function App() {
           </div>
         </div>
       </div>
-      <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>setTab(t.id)}>{t.label}</button>)}</div>
+      <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>{setTab(t.id);localStorage.setItem("ultimaTab",t.id);}}>{t.label}</button>)}</div>
       {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} setMepEditMes={setMepEditMes} setMepEditValor={setMepEditValor} setModalMep={setModalMep} />}
       {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} ingresosCargados={ingresosCargados} />}
-      {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} mepExtra={mepExtra} />}
+      {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} mepExtra={mepExtra} mes={mes} setMes={setMes} />}
       {tab==="liquidar" && <TabLiquidar mesesActivos={mesesActivos} gastosCargados={gastosCargados} liquidaciones={liquidaciones} setLiquidaciones={setLiquidaciones} />}
       {modalMes&&proximoMes&&(
         <div style={{ position:"fixed", inset:0, background:"#000a", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
