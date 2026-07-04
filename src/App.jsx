@@ -345,10 +345,10 @@ function TabBalance({ mesesActivos, gastosCargados, mepExtra, ingresosCargados }
   return (
     <div style={S.section}>
       <div style={{ fontWeight:800, fontSize:16, marginBottom:14 }}>Todos los meses</div>
-      {mesesActivos.map(m=>{ const t=calcTotales(m,gastosCargados,mepExtra), ad=ADELANTOS_HISTORICOS[m]||{}; return (
+      {[...mesesActivos].reverse().map(m=>{ const t=calcTotales(m,gastosCargados,mepExtra,ingresosCargados), ad=ADELANTOS_HISTORICOS[m]||{}; return (
         <div key={m} style={S.card}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
-            <span style={{ fontWeight:700, fontSize:15 }}>{m}</span>
+            <span style={{ fontWeight:700, fontSize:15 }}>{m} 2026</span>
             <span style={S.badge(t.balance>=0?C.green:C.red)}>{t.balance>=0?"+":""}{fmtUSD(t.balanceUSD)}</span>
           </div>
           <div style={S.row}><span style={S.label}>Gastos</span><span style={{ color:C.red, fontWeight:600 }}>{fmt(t.totalGastos)}</span></div>
@@ -505,7 +505,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
       {modo==="ingreso" ? (
         <div style={S.card}>
           <div style={{ fontWeight:700, fontSize:15, marginBottom:14 }}>Cargar ingreso</div>
-          <select style={S.select} value={formIng.mes} onChange={e=>setFormIng(f=>({...f,mes:e.target.value}))}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
+          <select style={S.select} value={formIng.mes} onChange={e=>{setFormIng(f=>({...f,mes:e.target.value}));localStorage.setItem("ultimoMes",e.target.value);}}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
           <select style={S.select} value={formIng.tipo} onChange={e=>setFormIng(f=>({...f,tipo:e.target.value,monto:""}))}>
             {CATEGORIAS_INGRESO.map(c=><option key={c.id} value={c.id}>{c.label}{c.usd?" (USD)":""}</option>)}
           </select>
@@ -539,7 +539,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
       ) : (
       <div ref={formRef} style={{ ...S.card, borderColor:editando?C.yellow+"88":C.border }}>
         <div style={{ fontWeight:700, fontSize:15, marginBottom:14, color:editando?C.yellow:C.text }}>{editando?"✏️ Editando gasto":"Cargar gasto"}</div>
-        <select style={S.select} value={form.mes} onChange={e=>setForm(f=>({...f,mes:e.target.value}))} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
+        <select style={S.select} value={form.mes} onChange={e=>{setForm(f=>({...f,mes:e.target.value}));localStorage.setItem("ultimoMes",e.target.value);}} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
         <select style={S.select} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CATEGORIAS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
         {(form.categoria==="otros"||editando) && <input style={S.input} placeholder={form.categoria==="otros"?"Descripción (obligatorio)":"Descripción (opcional)"} value={form.descripcion} onChange={e=>setForm(f=>({...f,descripcion:e.target.value}))} />}
         <div style={{ display:"flex", gap:8, marginBottom:10 }}>
