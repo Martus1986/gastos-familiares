@@ -321,7 +321,7 @@ function TabAlquileres({ mes, setMes, mesesActivos, mepExtra, ingresosCargados }
   const ing=getIngresos(mes,ingresosCargados), fijos=GASTOS_FIJOS_2026[mes]||{}, mep=getMep(mes,mepExtra);
   return (
     <div style={S.section}>
-      <select style={S.select} value={mes} onChange={e=>setMes(e.target.value)}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
+      <select style={S.select} value={mes} onChange={e=>{setMes(e.target.value);sessionStorage.setItem("ultimoMes",e.target.value);}}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
       {props.map(p=>{ 
         const i=ing[p.id]||0;
         const c = p.costoKeys ? p.costoKeys.reduce((a,k)=>a+(fijos[k]||0),0) : (p.costoKey?(fijos[p.costoKey]||0):0);
