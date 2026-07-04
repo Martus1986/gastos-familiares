@@ -423,7 +423,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
   );
 }
 
-function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados }) {
+function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
   const [modo, setModo] = useState("gasto"); // "gasto" | "ingreso"
   const [form, setForm] = useState({ mes:mesDefault, categoria:"otros", descripcion:"", monto:"", quien:"martin" });
@@ -965,7 +965,7 @@ export default function App() {
       {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} ingresosCargados={ingresosCargados} />}
-      {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} />}
+      {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} mepExtra={mepExtra} />}
       {tab==="liquidar" && <TabLiquidar mesesActivos={mesesActivos} gastosCargados={gastosCargados} liquidaciones={liquidaciones} setLiquidaciones={setLiquidaciones} />}
       {modalMes&&proximoMes&&(
         <div style={{ position:"fixed", inset:0, background:"#000a", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
