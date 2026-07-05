@@ -413,7 +413,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
         <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>Balance USD por mes</div>
         {mesesActivos.map((m,i)=>{ const t=vals[i]; return (
           <div key={m} style={{ ...S.row, marginBottom:10 }}>
-            <span style={{ fontSize:13, minWidth:60 }}>{m}</span>
+<span style={{ fontSize:13, minWidth:70 }}>{m} 2026</span>
             <div style={{ flex:1, height:8, background:C.border, borderRadius:4, margin:"0 10px" }}><div style={{ width:`${Math.min(100,Math.abs(t.balanceUSD)/20)}%`, background:t.balanceUSD>=0?C.green:C.red, borderRadius:4, height:8 }} /></div>
             <span style={{ color:t.balanceUSD>=0?C.green:C.red, fontWeight:700, fontSize:13 }}>{fmtUSD(t.balanceUSD)}</span>
           </div>
@@ -591,7 +591,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
   );
 }
 
-function TabLiquidar({ mesesActivos, gastosCargados, liquidaciones, setLiquidaciones }) {
+function TabLiquidar({ mesesActivos, gastosCargados, liquidaciones, setLiquidaciones, proximoMes, onActivarMes }) {
   const [modal, setModal] = useState(null);
   const [metodo, setMetodo] = useState("transferencia");
   const [nota, setNota] = useState("");
@@ -626,10 +626,15 @@ function TabLiquidar({ mesesActivos, gastosCargados, liquidaciones, setLiquidaci
       <div style={{ ...S.card, borderColor:pendientes.length>0?C.yellow+"55":C.green+"55", background:pendientes.length>0?C.yellow+"11":C.green+"11", marginBottom:16 }}>
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:22 }}>{pendientes.length>0?"⏳":"✅"}</span>
-          <div><div style={{ fontWeight:700, color:pendientes.length>0?C.yellow:C.green }}>{pendientes.length>0?"Pendiente de saldar":"Todo al día"}</div>{pendientes.length>0&&<div style={{ color:C.muted, fontSize:13 }}>{pendientes.join(", ")}</div>}</div>
+          <div><div style={{ fontWeight:700, color:pendientes.length>0?C.yellow:C.green }}>{pendientes.length>0?"Pendiente de saldar":"Todo al día"}</div>{pendientes.length>0&&<div style={{ color:C.muted, fontSize:13 }}>{pendientes.map(m=>m+" 2026").join(", ")}</div>}</div>
         </div>
       </div>
-      {mesesActivos.map(m=>{ const liq=calcLiq(m), est=liquidaciones[m]||{}; return (
+      {proximoMes && (
+        <button onClick={onActivarMes} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, width:"100%", background:C.accent+"22", color:C.accent, border:`2px dashed ${C.accent}`, borderRadius:14, padding:"14px 0", fontWeight:700, fontSize:15, cursor:"pointer", marginBottom:12 }}>
+          + Activar {proximoMes} 2026
+        </button>
+      )}
+      {[...mesesActivos].reverse().map(m=>{ const liq=calcLiq(m), est=liquidaciones[m]||{}; return (
         <div key={m} style={{ ...S.card, borderColor:est.saldado?C.green+"55":C.yellow+"55" }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
             <span style={{ fontWeight:800, fontSize:16 }}>{m}</span>
@@ -957,7 +962,7 @@ export default function App() {
             <div style={{ color:C.muted, fontSize:12, marginTop:2 }}>Martus & Vero · 2026</div>
           </div>
           <div style={{ display:"flex", gap:8, alignItems:"center" }}>
-            {proximoMes&&<button onClick={()=>setModalMes(true)} style={{ background:C.accent+"22", color:C.accent, border:`1px solid ${C.accent}`, borderRadius:10, padding:"8px 12px", fontSize:12, fontWeight:700, cursor:"pointer" }}>+ {proximoMes}</button>}
+
 
             <button onClick={()=>exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra)} style={{ background:C.green+"22", color:C.green, border:`1px solid ${C.green}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>📥 Excel</button>
             <button onClick={()=>supabase.auth.signOut()} style={{ background:"transparent", color:C.muted, border:`1px solid ${C.border}`, borderRadius:10, padding:"8px 10px", fontSize:11, fontWeight:600, cursor:"pointer" }}>Salir</button>
@@ -971,7 +976,7 @@ export default function App() {
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} ingresosCargados={ingresosCargados} />}
       {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} mepExtra={mepExtra} mes={mes} setMes={setMes} />}
-      {tab==="liquidar" && <TabLiquidar mesesActivos={mesesActivos} gastosCargados={gastosCargados} liquidaciones={liquidaciones} setLiquidaciones={setLiquidaciones} />}
+      {tab==="liquidar" && <TabLiquidar mesesActivos={mesesActivos} gastosCargados={gastosCargados} liquidaciones={liquidaciones} setLiquidaciones={setLiquidaciones} proximoMes={proximoMes} onActivarMes={()=>setModalMes(true)} />}
       {modalMes&&proximoMes&&(
         <div style={{ position:"fixed", inset:0, background:"#000a", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
           <div style={{ background:C.surface, borderRadius:20, padding:24, width:"100%", maxWidth:360, border:`1px solid ${C.border}` }}>
