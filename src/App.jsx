@@ -368,9 +368,9 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
     <div style={S.section}>
       <div style={S.card}>
         <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>Gastos vs Ingresos</div>
-        {mesesActivos.map((m,i)=>{ const t=vals[i]; return (
+        {[...mesesActivos].reverse().map((m)=>{ const i=mesesActivos.indexOf(m); const t=vals[i]; return (
           <div key={m} style={{ marginBottom:12 }}>
-            <div style={{ fontSize:12, color:C.muted, marginBottom:4 }}>{m}</div>
+            <div style={{ fontSize:12, color:C.muted, marginBottom:4 }}>{m} 2026</div>
             {[{l:"Gastos",v:t.totalGastos,c:C.red},{l:"Ing",v:t.totalIngresos,c:C.green}].map(r=>(
               <div key={r.l} style={{ display:"flex", gap:4, alignItems:"center", marginBottom:3 }}>
                 <div style={{ width:42, fontSize:11, color:r.c, textAlign:"right" }}>{r.l}</div>
@@ -392,13 +392,17 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
             </div>
           ))}
         </div>
-        {mesesActivos.map((m,i)=>{ const p=pags[i], mv=p.martin+p.vero, fo=p.fondo, total=mv+fo||1; return (
-          <div key={m} style={{ marginBottom:10 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:4 }}>
-              <span style={{ fontSize:12, color:C.muted }}>{m}</span>
-              <div style={{ display:"flex", gap:10 }}>
-                <span style={{ fontSize:11, color:C.martin }}>{fmt(mv)}</span>
-                <span style={{ fontSize:11, color:C.fondo }}>{fmt(fo)}</span>
+        {[...mesesActivos].reverse().map((m)=>{ const i=mesesActivos.indexOf(m); const p=pags[i], mv=p.martin+p.vero, fo=p.fondo, total=mv+fo||1;
+          const mvPct=total>0?Math.round((mv/total)*100):0, foPct=total>0?Math.round((fo/total)*100):0;
+          return (
+          <div key={m} style={{ marginBottom:12 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
+              <span style={{ fontSize:12, color:C.muted }}>{m} 2026</span>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ display:"flex", gap:8 }}>
+                  <span style={{ fontSize:11, color:C.martin }}>{fmt(mv)} <span style={{ fontWeight:700 }}>({mvPct}%)</span></span>
+                  <span style={{ fontSize:11, color:C.fondo }}>{fmt(fo)} <span style={{ fontWeight:700 }}>({foPct}%)</span></span>
+                </div>
               </div>
             </div>
             <div style={{ display:"flex", borderRadius:4, overflow:"hidden", height:12 }}>
@@ -411,9 +415,9 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
 
       <div style={S.card}>
         <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>Balance USD por mes</div>
-        {mesesActivos.map((m,i)=>{ const t=vals[i]; return (
+        {[...mesesActivos].reverse().map((m)=>{ const i=mesesActivos.indexOf(m); const t=vals[i]; return (
           <div key={m} style={{ ...S.row, marginBottom:10 }}>
-<span style={{ fontSize:13, minWidth:70 }}>{m} 2026</span>
+            <span style={{ fontSize:13, minWidth:70 }}>{m} 2026</span>
             <div style={{ flex:1, height:8, background:C.border, borderRadius:4, margin:"0 10px" }}><div style={{ width:`${Math.min(100,Math.abs(t.balanceUSD)/20)}%`, background:t.balanceUSD>=0?C.green:C.red, borderRadius:4, height:8 }} /></div>
             <span style={{ color:t.balanceUSD>=0?C.green:C.red, fontWeight:700, fontSize:13 }}>{fmtUSD(t.balanceUSD)}</span>
           </div>
