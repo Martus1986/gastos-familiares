@@ -426,8 +426,13 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
 function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra, mes, setMes }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
   const [modo, setModo] = useState("gasto"); // "gasto" | "ingreso"
-  const [form, setForm] = useState({ mes:mesDefault, categoria:"otros", descripcion:"", monto:"", quien:"martin" });
-  const [formIng, setFormIng] = useState({ mes:mesDefault, tipo:"alq_sanmartin", monto:"" });
+  const [form, setForm] = useState({ mes:mes, categoria:"otros", descripcion:"", monto:"", quien:"martin" });
+  const [formIng, setFormIng] = useState({ mes:mes, tipo:"alq_sanmartin", monto:"" });
+
+  useEffect(()=>{
+    setForm(f=>({...f, mes:mes}));
+    setFormIng(f=>({...f, mes:mes}));
+  }, [mes]);
   const [editando, setEditando] = useState(null);
   const [saved, setSaved] = useState(false);
   const [savedIng, setSavedIng] = useState(false);
