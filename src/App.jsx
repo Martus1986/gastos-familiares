@@ -206,28 +206,27 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
       <select style={S.select} value={mes} onChange={e=>{setMes(e.target.value);localStorage.setItem("ultimoMes",e.target.value);}}>
         {mesesActivos.map(m=><option key={m}>{m}</option>)}
       </select>
+      {/* Fila 1: Gastos e Ingresos */}
       <div style={{ display:"flex", gap:8, marginBottom:8 }}>
         {[{l:"GASTOS",v:fmt(t.totalGastos),s:fmtUSD(t.totalGastosUSD),c:C.red},{l:"INGRESOS",v:fmt(t.totalIngresos),s:fmtUSD(t.totalIngresosUSD),c:C.green}].map(x=>(
-          <div key={x.l} style={{ ...S.card, flex:1, marginBottom:0 }}>
+          <div key={x.l} style={{ ...S.card, flex:1, marginBottom:0, textAlign:"center" }}>
             <div style={{ color:C.muted, fontSize:11, marginBottom:3 }}>{x.l}</div>
             <div style={{ fontWeight:800, fontSize:15, color:x.c }}>{x.v}</div>
             <div style={{ color:C.muted, fontSize:11 }}>{x.s}</div>
           </div>
         ))}
       </div>
-      <div style={{ display:"flex", gap:8, marginBottom:14 }}>
-        <div style={{ ...S.card, flex:1, marginBottom:0 }}>
+      {/* Fila 2: Balance centrado + MEP pequeño */}
+      <div style={{ display:"flex", gap:8, marginBottom:14, alignItems:"stretch" }}>
+        <div style={{ ...S.card, flex:2, marginBottom:0, textAlign:"center" }}>
           <div style={{ color:C.muted, fontSize:11, marginBottom:3 }}>BALANCE</div>
-          <div style={{ fontWeight:800, fontSize:15, color:t.balance>=0?C.green:C.red }}>{fmt(t.balance)}</div>
+          <div style={{ fontWeight:800, fontSize:18, color:t.balance>=0?C.green:C.red }}>{fmt(t.balance)}</div>
           <div style={{ color:C.muted, fontSize:11 }}>{fmtUSD(t.balanceUSD)}</div>
         </div>
-        <div style={{ ...S.card, flex:1, marginBottom:0 }}>
-          <div style={{ color:C.muted, fontSize:11, marginBottom:3 }}>MEP</div>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div style={{ fontWeight:800, fontSize:15, color:C.yellow }}>${getMep(mes,mepExtra)}</div>
-            <button onClick={()=>{ setMepEditMes(mes); setMepEditValor(String(getMep(mes,mepExtra))); setModalMep(true); }} style={{ background:C.yellow+"22", color:C.yellow, border:"none", borderRadius:6, padding:"3px 8px", fontSize:11, fontWeight:600, cursor:"pointer" }}>✏️</button>
-          </div>
-          <div style={{ color:C.muted, fontSize:11 }}>ARS/USD</div>
+        <div style={{ ...S.card, flex:1, marginBottom:0, textAlign:"center", display:"flex", flexDirection:"column", justifyContent:"center", padding:"10px 8px" }}>
+          <div style={{ color:C.muted, fontSize:10, marginBottom:2 }}>MEP</div>
+          <div style={{ fontWeight:800, fontSize:14, color:C.yellow }}>${getMep(mes,mepExtra)}</div>
+          <button onClick={()=>{ setMepEditMes(mes); setMepEditValor(String(getMep(mes,mepExtra))); setModalMep(true); }} style={{ background:"transparent", color:C.yellow, border:"none", fontSize:10, fontWeight:600, cursor:"pointer", marginTop:4, padding:0 }}>✏️ editar</button>
         </div>
       </div>
 
@@ -562,7 +561,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
         <div style={{ fontWeight:700, fontSize:15, marginBottom:14, color:editando?C.yellow:C.text }}>{editando?"✏️ Editando gasto":"Cargar gasto"}</div>
         <select style={S.select} value={form.mes} onChange={e=>{setForm(f=>({...f,mes:e.target.value}));setMes(e.target.value);localStorage.setItem("ultimoMes",e.target.value);}} disabled={!!editando}>{mesesActivos.map(m=><option key={m}>{m}</option>)}</select>
         <select style={S.select} value={form.categoria} onChange={e=>setForm(f=>({...f,categoria:e.target.value}))}>{CATEGORIAS.map(c=><option key={c.id} value={c.id}>{c.label}</option>)}</select>
-        {(form.categoria==="otros"||editando) && <input style={S.input} placeholder={form.categoria==="otros"?"Descripción (obligatorio)":"Descripción (opcional)"} value={form.descripcion} onChange={e=>setForm(f=>({...f,descripcion:e.target.value}))} />}
+        {(form.categoria==="otros"||form.categoria==="extras"||editando) && <input style={S.input} placeholder={form.categoria==="otros"?"Descripción (obligatorio)":"Descripción (opcional)"} value={form.descripcion} onChange={e=>setForm(f=>({...f,descripcion:e.target.value}))} />}
         <div style={{ display:"flex", gap:8, marginBottom:10 }}>
           <button onClick={()=>setForm(f=>({...f,monto:f.monto.startsWith("-")?f.monto.slice(1):"-"+f.monto}))} style={{ background:form.monto.startsWith("-")?C.red+"33":"transparent", color:form.monto.startsWith("-")?C.red:C.muted, border:`2px solid ${form.monto.startsWith("-")?C.red:C.border}`, borderRadius:10, padding:"10px 14px", fontWeight:800, fontSize:18, cursor:"pointer", flexShrink:0 }}>−</button>
           <input style={{ ...S.input, marginBottom:0, flex:1 }} type="text" inputMode="decimal" placeholder="Monto $" value={form.monto.startsWith("-")?form.monto.slice(1):form.monto} onChange={e=>setForm(f=>({...f,monto:f.monto.startsWith("-")?"-"+e.target.value:e.target.value}))} />
