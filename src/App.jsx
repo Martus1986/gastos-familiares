@@ -749,6 +749,117 @@ function LoginScreen({ onLogin }) {
 }
 
 
+
+// ── TAB TABLA ─────────────────────────────────────────────────────────────────
+function TabTabla({ mesesActivos, gastosCargados }) {
+  const colW = 90;
+  const labelW = 130;
+
+  const getValorCelda = (mes, catId) => {
+    const fijos = GASTOS_FIJOS_2026[mes]||{};
+    const cargados = gastosCargados[mes]||[];
+    const esH = MESES_HISTORICOS.includes(mes);
+    if (catId === "otros") {
+      const otrosC = cargados.filter(g=>g.categoria==="otros");
+      return esH && otrosC.length===0 ? (fijos.otros||0) : otrosC.reduce((a,b)=>a+b.monto,0);
+    }
+    if (esH) return fijos[catId]||0;
+    const c = cargados.find(g=>g.categoria===catId);
+    return c?.monto||0;
+  };
+
+  const getPagador = (mes, catId) => {
+    const esH = MESES_HISTORICOS.includes(mes);
+    if (esH) return PAGADOR_2026[catId]?.[mes]||null;
+    const cargados = gastosCargados[mes]||[];
+    const c = cargados.find(g=>g.categoria===catId);
+    return c?.quien||null;
+  };
+
+  const fmtK = n => n>=1000 ? `${(n/1000).toFixed(0)}k` : n>0 ? String(Math.round(n)) : '-';
+
+  const mesesRev = [...mesesActivos].reverse();
+
+  return (
+    <div style={{ ...S.section, padding:"16px 0" }}>
+      <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+        <table style={{ borderCollapse:"collapse", minWidth: labelW + colW*mesesActivos.length + colW }}>
+          {/* Header */}
+          <thead>
+            <tr>
+              <th style={{ background:C.surface, color:C.muted, fontSize:11, fontWeight:600, padding:"8px 10px", textAlign:"left", position:"sticky", left:0, zIndex:2, minWidth:labelW, borderBottom:`1px solid ${C.border}`, borderRight:`1px solid ${C.border}` }}>
+                Ítem
+              </th>
+              {mesesRev.map(m=>(
+                <th key={m} style={{ background:C.surface, color:C.text, fontSize:11, fontWeight:700, padding:"8px 6px", textAlign:"center", minWidth:colW, borderBottom:`1px solid ${C.border}`, borderRight:`1px solid ${C.border}`, whiteSpace:"nowrap" }}>
+                  {m.slice(0,3)} 26
+                </th>
+              ))}
+              <th style={{ background:C.surface, color:C.muted, fontSize:11, fontWeight:600, padding:"8px 6px", textAlign:"center", minWidth:colW, borderBottom:`1px solid ${C.border}` }}>
+                Promedio
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {CATEGORIAS.map((cat, rowIdx) => {
+              const valores = mesesActivos.map(m=>getValorCelda(m,cat.id));
+              const valoresConDato = valores.filter(v=>v!==0);
+              const promedio = valoresConDato.length ? valoresConDato.reduce((a,b)=>a+b,0)/valoresConDato.length : 0;
+              const rowBg = rowIdx%2===0 ? C.card : C.surface;
+              return (
+                <tr key={cat.id}>
+                  <td style={{ background:rowBg, color:C.text, fontSize:11, fontWeight:600, padding:"7px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border+"44"}`, whiteSpace:"nowrap" }}>
+                    {cat.label}
+                  </td>
+                  {mesesRev.map(m=>{
+                    const v = getValorCelda(m, cat.id);
+                    const p = getPagador(m, cat.id);
+                    const pColor = PC[p]||C.muted;
+                    return (
+                      <td key={m} style={{ background:v>0?pColor+"11":rowBg, color:v>0?pColor:C.border, fontSize:11, fontWeight:v>0?600:400, padding:"7px 6px", textAlign:"center", borderRight:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border+"44"}`, whiteSpace:"nowrap" }}>
+                        {v<0 ? <span style={{ color:C.red }}>{fmtK(v)}</span> : fmtK(v)}
+                      </td>
+                    );
+                  })}
+                  <td style={{ background:rowBg, color:C.muted, fontSize:11, fontWeight:600, padding:"7px 6px", textAlign:"center", borderBottom:`1px solid ${C.border+"44"}` }}>
+                    {promedio>0 ? fmtK(promedio) : '-'}
+                  </td>
+                </tr>
+              );
+            })}
+            {/* TOTAL row */}
+            <tr>
+              <td style={{ background:C.surface, color:C.text, fontSize:12, fontWeight:800, padding:"9px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderTop:`2px solid ${C.border}` }}>
+                TOTAL
+              </td>
+              {mesesRev.map(m=>{
+                const total = CATEGORIAS.reduce((a,cat)=>a+getValorCelda(m,cat.id),0);
+                return (
+                  <td key={m} style={{ background:C.surface, color:C.accent, fontSize:11, fontWeight:800, padding:"9px 6px", textAlign:"center", borderRight:`1px solid ${C.border}`, borderTop:`2px solid ${C.border}` }}>
+                    {fmtK(total)}
+                  </td>
+                );
+              })}
+              <td style={{ background:C.surface, color:C.accent, fontSize:11, fontWeight:800, padding:"9px 6px", textAlign:"center", borderTop:`2px solid ${C.border}` }}>
+                {fmtK(mesesActivos.reduce((a,m)=>a+CATEGORIAS.reduce((b,cat)=>b+getValorCelda(m,cat.id),0),0)/mesesActivos.length)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {/* Legend */}
+      <div style={{ display:"flex", gap:12, padding:"12px 14px", flexWrap:"wrap" }}>
+        {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"],["mixto","M+V"]].map(([k,l])=>(
+          <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <div style={{ width:10, height:10, borderRadius:2, background:PC[k] }} />
+            <span style={{ fontSize:11, color:C.muted }}>{l}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
   const rows = [];
@@ -965,7 +1076,7 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={()=>{}} />;
   if (cargando) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
 
-  const TABS=[{id:"resumen",label:"Resumen"},{id:"cargar",label:"+ Cargar"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"liquidar",label:"💸 Liquidar"}];
+  const TABS=[{id:"resumen",label:"Resumen"},{id:"cargar",label:"+ Cargar"},{id:"tabla",label:"📋 Tabla"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"liquidar",label:"💸 Liquidar"}];
 
   return (
     <div style={S.app}>
@@ -985,6 +1096,7 @@ export default function App() {
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>{setTab(t.id);localStorage.setItem("ultimaTab",t.id);}}>{t.label}</button>)}</div>
       {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} setMepEditMes={setMepEditMes} setMepEditValor={setMepEditValor} setModalMep={setModalMep} />}
+      {tab==="tabla"    && <TabTabla mesesActivos={mesesActivos} gastosCargados={gastosCargados} />}
       {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
