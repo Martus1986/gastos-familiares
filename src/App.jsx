@@ -216,18 +216,17 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
           </div>
         ))}
       </div>
-      {/* Fila 2: Balance centrado + MEP pequeño */}
-      <div style={{ display:"flex", gap:8, marginBottom:14, alignItems:"stretch" }}>
-        <div style={{ ...S.card, flex:2, marginBottom:0, textAlign:"center" }}>
-          <div style={{ color:C.muted, fontSize:11, marginBottom:3 }}>BALANCE</div>
-          <div style={{ fontWeight:800, fontSize:18, color:t.balance>=0?C.green:C.red }}>{fmt(t.balance)}</div>
-          <div style={{ color:C.muted, fontSize:11 }}>{fmtUSD(t.balanceUSD)}</div>
-        </div>
-        <div style={{ ...S.card, flex:1, marginBottom:0, textAlign:"center", display:"flex", flexDirection:"column", justifyContent:"center", padding:"10px 8px" }}>
-          <div style={{ color:C.muted, fontSize:10, marginBottom:2 }}>MEP</div>
-          <div style={{ fontWeight:800, fontSize:14, color:C.yellow }}>${getMep(mes,mepExtra)}</div>
-          <button onClick={()=>{ setMepEditMes(mes); setMepEditValor(String(getMep(mes,mepExtra))); setModalMep(true); }} style={{ background:"transparent", color:C.yellow, border:"none", fontSize:10, fontWeight:600, cursor:"pointer", marginTop:4, padding:0 }}>✏️ editar</button>
-        </div>
+      {/* Fila 2: Balance centrado */}
+      <div style={{ ...S.card, marginBottom:8, textAlign:"center" }}>
+        <div style={{ color:C.muted, fontSize:11, marginBottom:3 }}>BALANCE</div>
+        <div style={{ fontWeight:800, fontSize:22, color:t.balance>=0?C.green:C.red }}>{fmt(t.balance)}</div>
+        <div style={{ color:C.muted, fontSize:11 }}>{fmtUSD(t.balanceUSD)}</div>
+      </div>
+      {/* Fila 3: MEP pequeño */}
+      <div style={{ display:"flex", justifyContent:"flex-end", alignItems:"center", gap:8, marginBottom:14, paddingRight:4 }}>
+        <span style={{ color:C.muted, fontSize:11 }}>MEP:</span>
+        <span style={{ fontWeight:700, fontSize:12, color:C.yellow }}>${getMep(mes,mepExtra)}</span>
+        <button onClick={()=>{ setMepEditMes(mes); setMepEditValor(String(getMep(mes,mepExtra))); setModalMep(true); }} style={{ background:"transparent", color:C.yellow, border:"none", fontSize:10, fontWeight:600, cursor:"pointer", padding:0 }}>✏️</button>
       </div>
 
       <div style={S.card}>
