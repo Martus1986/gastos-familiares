@@ -751,7 +751,7 @@ function LoginScreen({ onLogin }) {
 
 
 // ── TAB TABLA ─────────────────────────────────────────────────────────────────
-function TabTabla({ mesesActivos, gastosCargados }) {
+function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
   const colW = 90;
   const labelW = 130;
 
@@ -764,8 +764,8 @@ function TabTabla({ mesesActivos, gastosCargados }) {
       return esH && otrosC.length===0 ? (fijos.otros||0) : otrosC.reduce((a,b)=>a+b.monto,0);
     }
     if (esH) return fijos[catId]||0;
-    const c = cargados.find(g=>g.categoria===catId);
-    return c?.monto||0;
+    // Para meses nuevos, sumar TODOS los gastos de esa categoría
+    return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
   };
 
   const getPagador = (mes, catId) => {
@@ -827,10 +827,10 @@ function TabTabla({ mesesActivos, gastosCargados }) {
                 </tr>
               );
             })}
-            {/* TOTAL row */}
+            {/* TOTAL $ row */}
             <tr>
               <td style={{ background:C.surface, color:C.text, fontSize:12, fontWeight:800, padding:"9px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderTop:`2px solid ${C.border}` }}>
-                TOTAL
+                TOTAL $
               </td>
               {mesesRev.map(m=>{
                 const total = CATEGORIAS.reduce((a,cat)=>a+getValorCelda(m,cat.id),0);
@@ -842,6 +842,25 @@ function TabTabla({ mesesActivos, gastosCargados }) {
               })}
               <td style={{ background:C.surface, color:C.accent, fontSize:11, fontWeight:800, padding:"9px 6px", textAlign:"center", borderTop:`2px solid ${C.border}` }}>
                 {fmtK(mesesActivos.reduce((a,m)=>a+CATEGORIAS.reduce((b,cat)=>b+getValorCelda(m,cat.id),0),0)/mesesActivos.length)}
+              </td>
+            </tr>
+            {/* TOTAL USD row */}
+            <tr>
+              <td style={{ background:C.surface, color:C.muted, fontSize:11, fontWeight:700, padding:"7px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderBottom:`2px solid ${C.border}` }}>
+                TOTAL USD
+              </td>
+              {mesesRev.map(m=>{
+                const total = CATEGORIAS.reduce((a,cat)=>a+getValorCelda(m,cat.id),0);
+                const mep = getMep(m, mepExtra);
+                const usd = Math.round(total/mep);
+                return (
+                  <td key={m} style={{ background:C.surface, color:C.yellow, fontSize:11, fontWeight:700, padding:"7px 6px", textAlign:"center", borderRight:`1px solid ${C.border}`, borderBottom:`2px solid ${C.border}` }}>
+                    {usd>0?`U$D ${usd.toLocaleString("es-AR")}`:'-'}
+                  </td>
+                );
+              })}
+              <td style={{ background:C.surface, color:C.yellow, fontSize:11, fontWeight:700, padding:"7px 6px", textAlign:"center", borderBottom:`2px solid ${C.border}` }}>
+                {(() => { const avg=mesesActivos.reduce((a,m)=>{ const t=CATEGORIAS.reduce((b,cat)=>b+getValorCelda(m,cat.id),0); return a+t/getMep(m,mepExtra); },0)/mesesActivos.length; return `U$D ${Math.round(avg).toLocaleString("es-AR")}`; })()}
               </td>
             </tr>
           </tbody>
@@ -1096,7 +1115,7 @@ export default function App() {
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>{setTab(t.id);localStorage.setItem("ultimaTab",t.id);}}>{t.label}</button>)}</div>
       {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} setMepEditMes={setMepEditMes} setMepEditValor={setMepEditValor} setModalMep={setModalMep} />}
-      {tab==="tabla"    && <TabTabla mesesActivos={mesesActivos} gastosCargados={gastosCargados} />}
+      {tab==="tabla"    && <TabTabla mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} />}
       {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
