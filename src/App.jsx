@@ -3,7 +3,17 @@ import { supabase } from './supabase.js';
 import { leerDato, guardarDato } from './supabase.js';
 
 const MESES_HISTORICOS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio"];
-const TODOS_LOS_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+const NOMBRES_MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+function siguienteMes(mesActual) {
+  // mesActual puede ser "Julio" o "Enero 2027"
+  const partes = mesActual.split(' ');
+  const nombre = partes[0];
+  const anio = partes[1] ? parseInt(partes[1]) : 2026;
+  const idx = NOMBRES_MESES.indexOf(nombre);
+  if (idx === 11) return `Enero ${anio+1}`;
+  return `${NOMBRES_MESES[idx+1]}${anio===2026?'':' '+anio}`;
+}
 
 const GASTOS_FIJOS_2026 = {
   Enero:   { expensas_cdp547:99855, internet_cdp450:24087, seguro_up:140106, tarjeta_patagonia:590344.49, expensas_fitzroy:151534, luz_fitzroy:35552, internet_fitzroy:28021.5, guarderia:45000, fondo_coto:427000, expensas_cdp450:267612.18, luz_cdp450:66766.02, gas_cdp450:0, tarjeta_mp:423804.57, otros:484236, extras:368900 },
@@ -186,7 +196,7 @@ function MiniBar({ label, value, max, pagador, onExpand, expandido, children }) 
   );
 }
 
-function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingresosCargados, setMepEditMes, setMepEditValor, setModalMep }) {
+function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingresosCargados, setMepEditMes, setMepEditValor, setModalMep, liquidaciones }) {
   const [expandOtros, setExpandOtros] = useState(false);
   const t = calcTotales(mes, gastosCargados, mepExtra, ingresosCargados);
   const fijos = GASTOS_FIJOS_2026[mes]||{};
@@ -292,24 +302,44 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
         {ingItems.map(r=><div key={r.l} style={S.row}><span style={S.label}>{r.l}</span><span style={{ fontWeight:600, color:C.green }}>{fmt(r.v)}</span></div>)}
       </div>
 
-      <div style={S.card}>
-        <div style={{ fontWeight:700, fontSize:14, marginBottom:10 }}>Adelantos</div>
-        <div style={{ display:"flex", gap:8, marginBottom:10 }}>
-          {[["martin",adelantosM],["vero",adelantosV]].map(([k,v])=>(
-            <div key={k} style={{ flex:1, background:PC[k]+"11", borderRadius:10, padding:"8px 10px", textAlign:"center" }}>
-              <div style={{ color:PC[k], fontSize:11, marginBottom:2 }}>{PL[k]}</div>
-              <div style={{ fontWeight:700 }}>{fmt(v)}</div>
+      {(() => {
+        const liqMes = liquidaciones[mes];
+        const saldado = liqMes?.saldado;
+        const borderColor = saldado ? C.green : C.red;
+        return (
+          <div style={{ ...S.card, borderColor, borderWidth:2 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:10 }}>
+              <span style={{ fontWeight:700, fontSize:14 }}>Adelantos</span>
+              <span style={{ background:borderColor+"22", color:borderColor, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }}>
+                {saldado ? "✓ Saldado" : "⏳ Pendiente"}
+              </span>
             </div>
-          ))}
-        </div>
-        {(adelantosM||adelantosV)?<div style={{ background:C.surface, borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-          <div style={{ color:C.muted, fontSize:12, marginBottom:4 }}>
-            <span style={{ color:PC[diff>0?"vero":"martin"], fontWeight:700 }}>{PL[diff>0?"vero":"martin"]}</span>{" le debe a "}
-            <span style={{ color:PC[diff>0?"martin":"vero"], fontWeight:700 }}>{PL[diff>0?"martin":"vero"]}</span>
+            <div style={{ display:"flex", gap:8, marginBottom:10 }}>
+              {[["martin",adelantosM],["vero",adelantosV]].map(([k,v])=>(
+                <div key={k} style={{ flex:1, background:PC[k]+"11", borderRadius:10, padding:"8px 10px", textAlign:"center" }}>
+                  <div style={{ color:PC[k], fontSize:11, marginBottom:2 }}>{PL[k]}</div>
+                  <div style={{ fontWeight:700 }}>{fmt(v)}</div>
+                </div>
+              ))}
+            </div>
+            {(adelantosM||adelantosV) ? (
+              <div style={{ background:C.surface, borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
+                <div style={{ color:C.muted, fontSize:12, marginBottom:4 }}>
+                  <span style={{ color:PC[diff>0?"vero":"martin"], fontWeight:700 }}>{PL[diff>0?"vero":"martin"]}</span>
+                  {" le debe a "}
+                  <span style={{ color:PC[diff>0?"martin":"vero"], fontWeight:700 }}>{PL[diff>0?"martin":"vero"]}</span>
+                </div>
+                <div style={{ fontWeight:800, fontSize:18, color:C.accent }}>{fmt(Math.abs(diff)/2)}</div>
+                {saldado && liqMes?.metodo && (
+                  <div style={{ color:C.green, fontSize:11, marginTop:6, fontWeight:600 }}>
+                    ✓ Saldado via {liqMes.metodo} · {liqMes.fecha}
+                  </div>
+                )}
+              </div>
+            ) : null}
           </div>
-          <div style={{ fontWeight:800, fontSize:18, color:C.accent }}>{fmt(Math.abs(diff)/2)}</div>
-        </div>:null}
-      </div>
+        );
+      })()}
     </div>
   );
 }
@@ -361,34 +391,77 @@ function TabBalance({ mesesActivos, gastosCargados, mepExtra, ingresosCargados }
 function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, ingresosCargados }) {
   const vals = mesesActivos.map(m=>calcTotales(m,gastosCargados,mepExtra,ingresosCargados));
   const pags = mesesActivos.map(m=>calcPagadores(m,gastosCargados,liquidaciones));
-  const maxVal = Math.max(...vals.map(v=>Math.max(v.totalGastos,v.totalIngresos)),1);
+  const mesesRev = [...mesesActivos].reverse();
+  const maxUSD = Math.max(...vals.map(v=>Math.max(v.totalGastosUSD,v.totalIngresosUSD)),1);
+  const BAR_H = 120;
+
   return (
     <div style={S.section}>
+
+      {/* 1. Gastos vs Ingresos - barras verticales en USD */}
       <div style={S.card}>
-        <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>Gastos vs Ingresos</div>
-        {[...mesesActivos].reverse().map((m)=>{ const i=mesesActivos.indexOf(m); const t=vals[i]; return (
-          <div key={m} style={{ marginBottom:12 }}>
-            <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:4 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <span style={{ fontSize:12, color:C.muted }}>{m} 2026</span>
-                {!liquidaciones[m]?.saldado && <span style={{ background:C.yellow+"22", color:C.yellow, borderRadius:20, padding:"1px 7px", fontSize:10, fontWeight:700 }}>⏳ pendiente</span>}
+        <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>Gastos vs Ingresos (USD)</div>
+        <div style={{ display:"flex", gap:2, overflowX:"auto", paddingBottom:8, alignItems:"flex-end" }}>
+          {mesesRev.map(m=>{ const i=mesesActivos.indexOf(m); const t=vals[i];
+            const gH = Math.max(4, (t.totalGastosUSD/maxUSD)*BAR_H);
+            const iH = Math.max(4, (t.totalIngresosUSD/maxUSD)*BAR_H);
+            const pendiente = !liquidaciones[m]?.saldado;
+            return (
+              <div key={m} style={{ display:"flex", flexDirection:"column", alignItems:"center", minWidth:52, flex:1 }}>
+                <div style={{ display:"flex", gap:3, alignItems:"flex-end", height:BAR_H+30, marginBottom:4 }}>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", height:"100%" }}>
+                    <span style={{ fontSize:8, color:C.red, fontWeight:600, marginBottom:2, textAlign:"center" }}>{Math.round(t.totalGastosUSD).toLocaleString("es-AR")}</span>
+                    <div style={{ width:16, height:gH, background:C.red, borderRadius:"3px 3px 0 0" }} />
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", height:"100%" }}>
+                    <span style={{ fontSize:8, color:C.green, fontWeight:600, marginBottom:2, textAlign:"center" }}>{Math.round(t.totalIngresosUSD).toLocaleString("es-AR")}</span>
+                    <div style={{ width:16, height:iH, background:C.green, borderRadius:"3px 3px 0 0" }} />
+                  </div>
+                </div>
+                <div style={{ textAlign:"center" }}>
+                  <div style={{ fontSize:10, color:C.muted }}>{m.slice(0,3)}</div>
+                  {pendiente && <div style={{ fontSize:8, color:C.yellow }}>⏳</div>}
+                </div>
               </div>
-              {!liquidaciones[m]?.saldado && <span style={{ background:C.yellow+"22", color:C.yellow, borderRadius:20, padding:"1px 7px", fontSize:10, fontWeight:700 }}>⏳ pendiente</span>}
+            );
+          })}
+        </div>
+        <div style={{ display:"flex", gap:12, marginTop:4 }}>
+          {[{c:C.red,l:"Gastos"},{c:C.green,l:"Ingresos"}].map(x=>(
+            <div key={x.l} style={{ display:"flex", alignItems:"center", gap:4 }}>
+              <div style={{ width:10, height:10, borderRadius:2, background:x.c }} />
+              <span style={{ fontSize:11, color:C.muted }}>{x.l}</span>
             </div>
-            {[{l:"Gastos",v:t.totalGastos,c:C.red},{l:"Ing",v:t.totalIngresos,c:C.green}].map(r=>(
-              <div key={r.l} style={{ display:"flex", gap:4, alignItems:"center", marginBottom:3 }}>
-                <div style={{ width:42, fontSize:11, color:r.c, textAlign:"right" }}>{r.l}</div>
-                <div style={{ flex:1, background:C.border, borderRadius:4, height:8 }}><div style={{ width:`${(r.v/maxVal)*100}%`, background:r.c, borderRadius:4, height:8 }} /></div>
-                <div style={{ fontSize:10, color:C.muted, width:50, textAlign:"right" }}>{Math.round(r.v/1000)}k</div>
-              </div>
-            ))}
-          </div>
-        );})}
+          ))}
+        </div>
       </div>
 
+      {/* 2. Quién pagó - barras verticales apiladas en USD */}
       <div style={S.card}>
-        <div style={{ fontWeight:700, fontSize:14, marginBottom:4 }}>Quién pagó cada mes</div>
-        <div style={{ display:"flex", gap:12, marginBottom:12 }}>
+        <div style={{ fontWeight:700, fontSize:14, marginBottom:16 }}>Quién pagó (USD)</div>
+        <div style={{ display:"flex", gap:2, overflowX:"auto", paddingBottom:8, alignItems:"flex-end" }}>
+          {mesesRev.map(m=>{ const i=mesesActivos.indexOf(m); const p=pags[i];
+            const mep=getMep(m,mepExtra);
+            const mv=(p.martin+p.vero)/mep, fo=p.fondo/mep, total=mv+fo||1;
+            const mvPct=Math.round((mv/total)*100), foPct=Math.round((fo/total)*100);
+            const mvH=(mv/total)*BAR_H, foH=(fo/total)*BAR_H;
+            const pendiente = !liquidaciones[m]?.saldado;
+            return (
+              <div key={m} style={{ display:"flex", flexDirection:"column", alignItems:"center", minWidth:52, flex:1 }}>
+                <div style={{ fontSize:8, color:C.martin, fontWeight:700, marginBottom:1 }}>{mvPct}%</div>
+                <div style={{ fontSize:8, color:C.fondo, fontWeight:700, marginBottom:2 }}>{foPct}%</div>
+                <div style={{ width:28, height:BAR_H, display:"flex", flexDirection:"column", justifyContent:"flex-end", marginBottom:4, borderRadius:"3px 3px 0 0", overflow:"hidden" }}>
+                  <div style={{ width:"100%", height:foH, background:C.fondo }} />
+                  <div style={{ width:"100%", height:mvH, background:C.martin }} />
+                </div>
+                <div style={{ fontSize:8, color:C.muted, textAlign:"center" }}>{Math.round(mv).toLocaleString("es-AR")}</div>
+                <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{m.slice(0,3)}</div>
+                {pendiente && <div style={{ fontSize:8, color:C.yellow }}>⏳</div>}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display:"flex", gap:12, marginTop:4 }}>
           {[["martin","Martus+Vero"],["fondo","Fondo"]].map(([k,l])=>(
             <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
               <div style={{ width:10, height:10, borderRadius:2, background:PC[k] }} />
@@ -396,33 +469,12 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
             </div>
           ))}
         </div>
-        {[...mesesActivos].reverse().map((m)=>{ const i=mesesActivos.indexOf(m); const p=pags[i], mv=p.martin+p.vero, fo=p.fondo, total=mv+fo||1;
-          const mvPct=total>0?Math.round((mv/total)*100):0, foPct=total>0?Math.round((fo/total)*100):0;
-          return (
-          <div key={m} style={{ marginBottom:12 }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
-              <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                <span style={{ fontSize:12, color:C.muted }}>{m} 2026</span>
-                {!liquidaciones[m]?.saldado && <span style={{ background:C.yellow+"22", color:C.yellow, borderRadius:20, padding:"1px 7px", fontSize:10, fontWeight:700 }}>⏳ pendiente</span>}
-              </div>
-              <div style={{ textAlign:"right" }}>
-                <div style={{ display:"flex", gap:8 }}>
-                  <span style={{ fontSize:11, color:C.martin }}>{fmt(mv)} <span style={{ fontWeight:700 }}>({mvPct}%)</span></span>
-                  <span style={{ fontSize:11, color:C.fondo }}>{fmt(fo)} <span style={{ fontWeight:700 }}>({foPct}%)</span></span>
-                </div>
-              </div>
-            </div>
-            <div style={{ display:"flex", borderRadius:4, overflow:"hidden", height:12 }}>
-              <div style={{ width:`${(mv/total)*100}%`, background:C.martin }} />
-              <div style={{ width:`${(fo/total)*100}%`, background:C.fondo }} />
-            </div>
-          </div>
-        );})}
       </div>
 
+      {/* 3. Balance USD */}
       <div style={S.card}>
         <div style={{ fontWeight:700, fontSize:14, marginBottom:12 }}>Balance USD por mes</div>
-        {[...mesesActivos].reverse().map((m)=>{ const i=mesesActivos.indexOf(m); const t=vals[i]; return (
+        {mesesRev.map(m=>{ const i=mesesActivos.indexOf(m); const t=vals[i]; return (
           <div key={m} style={{ ...S.row, marginBottom:10 }}>
             <div style={{ minWidth:90 }}>
               <div style={{ fontSize:13 }}>{m} 2026</div>
@@ -436,6 +488,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
     </div>
   );
 }
+
 
 function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra, mes, setMes }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
@@ -881,29 +934,62 @@ function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
 
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
+  const mesesRev = [...mesesActivos].reverse();
   const rows = [];
-  // Header
-  rows.push(['Mes','Categoría','Descripción','Monto ARS','Quién pagó','Fecha']);
-  mesesActivos.forEach(mes => {
+
+  // ── TABLA DE GASTOS ──
+  // Header row: Ítem | Mes1 | Mes2 | ... | Promedio
+  const headerGastos = ['GASTOS', ...mesesRev, 'Promedio'];
+  rows.push(headerGastos);
+
+  // Sub-header MEP
+  const mepRow = ['MEP (ARS/USD)', ...mesesRev.map(m => getMep(m, mepExtra)), ''];
+  rows.push(mepRow);
+
+  // One row per category
+  const getVal = (mes, catId) => {
     const fijos = GASTOS_FIJOS_2026[mes]||{};
+    const cargados = gastosCargados[mes]||[];
     const esH = MESES_HISTORICOS.includes(mes);
-    if (esH) {
-      CATEGORIAS.forEach(cat => {
-        const v = fijos[cat.id];
-        if (v) rows.push([mes, cat.label, '', v, PAGADOR_2026[cat.id]?.[mes]||'', '']);
-      });
-    }
-    (gastosCargados[mes]||[]).forEach(g => {
-      rows.push([mes, CATEGORIAS.find(c=>c.id===g.categoria)?.label||g.categoria, g.descripcion||'', g.monto, PL[g.quien]||g.quien, g.fecha||'']);
-    });
-    // Ingresos
-    const ing = getIngresos(mes, ingresosCargados);
-    CATEGORIAS_INGRESO.forEach(ci => {
-      if (ing[ci.id]) rows.push([mes, 'INGRESO - '+ci.label, '', ing[ci.id], '', '']);
-    });
-    // Liquidación
-    const liq = liquidaciones[mes];
-    if (liq?.saldado) rows.push([mes, 'LIQUIDACIÓN', liq.nota||'', liq.montoPagado||'', liq.metodo||'', liq.fecha||'']);
+    if (catId==="otros") { const c=cargados.filter(g=>g.categoria==="otros"); return esH&&c.length===0?(fijos.otros||0):c.reduce((a,b)=>a+b.monto,0); }
+    if (catId==="extras") { const c=cargados.filter(g=>g.categoria==="extras"); return esH&&c.length===0?(fijos.extras||0):c.reduce((a,b)=>a+b.monto,0); }
+    if (esH) return fijos[catId]||0;
+    return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
+  };
+
+  CATEGORIAS.forEach(cat => {
+    const vals = mesesRev.map(m => getVal(m, cat.id));
+    const conDato = vals.filter(v=>v!==0);
+    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : '';
+    rows.push([cat.label, ...vals.map(v=>v||''), prom]);
+  });
+
+  // Total $ row
+  const totalesARS = mesesRev.map(m => CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
+  rows.push(['TOTAL $', ...totalesARS.map(v=>Math.round(v)), '']);
+
+  // Total USD row
+  const totalesUSD = mesesRev.map((m,i) => Math.round(totalesARS[i]/getMep(m,mepExtra)));
+  rows.push(['TOTAL USD', ...totalesUSD, '']);
+
+  rows.push([]); // blank row
+
+  // ── TABLA DE INGRESOS ──
+  rows.push(['INGRESOS', ...mesesRev, 'Promedio']);
+  CATEGORIAS_INGRESO.forEach(ci => {
+    const vals = mesesRev.map(m => getIngresos(m, ingresosCargados)[ci.id]||'');
+    const conDato = vals.filter(v=>v&&v!==0);
+    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : '';
+    rows.push([ci.label+(ci.usd?' (USD)':''), ...vals, prom]);
+  });
+
+  rows.push([]); // blank row
+
+  // ── LIQUIDACIONES ──
+  rows.push(['LIQUIDACIONES', 'Estado', 'Método', 'Monto', 'Fecha']);
+  mesesRev.forEach(m => {
+    const liq = liquidaciones[m];
+    rows.push([m, liq?.saldado?'Saldado':'Pendiente', liq?.metodo||'', liq?.montoPagado||'', liq?.fecha||'']);
   });
 
   // Build CSV
@@ -1067,7 +1153,7 @@ export default function App() {
     })();
   },[session]);
 
-  const proximoMes = TODOS_LOS_MESES[TODOS_LOS_MESES.indexOf(mesesActivos[mesesActivos.length-1])+1];
+  const proximoMes = mesesActivos.length > 0 ? siguienteMes(mesesActivos[mesesActivos.length-1]) : 'Julio';
 
   const activarMes = async () => {
     if (!proximoMes) return;
@@ -1114,7 +1200,7 @@ export default function App() {
         </div>
       </div>
       <div style={S.nav}>{TABS.map(t=><button key={t.id} style={S.navBtn(tab===t.id)} onClick={()=>{setTab(t.id);localStorage.setItem("ultimaTab",t.id);}}>{t.label}</button>)}</div>
-      {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} setMepEditMes={setMepEditMes} setMepEditValor={setMepEditValor} setModalMep={setModalMep} />}
+      {tab==="resumen"  && <TabResumen mes={mes} setMes={setMes} mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} setMepEditMes={setMepEditMes} setMepEditValor={setMepEditValor} setModalMep={setModalMep} liquidaciones={liquidaciones} />}
       {tab==="tabla"    && <TabTabla mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} />}
       {tab==="alq"      && <TabAlquileres mes={mes} setMes={setMes} mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="rent"      && <TabRentabilidad mesesActivos={mesesActivos} mepExtra={mepExtra} ingresosCargados={ingresosCargados} gastosCargados={gastosCargados} valorProps={valorProps} setValorProps={setValorProps} />}
