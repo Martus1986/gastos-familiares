@@ -277,7 +277,7 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
             gastosNoIngreso.forEach(g => { if(!grouped[g.categoria]) grouped[g.categoria]=[]; grouped[g.categoria].push(g); });
             const cats = Object.keys(grouped);
             return (<>
-              {cats.map(catId => {
+              {CATEGORIAS.filter(cat=>cats.includes(cat.id)).map(cat=>{ const catId=cat.id;
                 const items = grouped[catId];
                 const total = items.reduce((a,b)=>a+b.monto,0);
                 const label = CATEGORIAS.find(c=>c.id===catId)?.label||catId;
@@ -422,6 +422,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
             const pendiente = !liquidaciones[m]?.saldado;
             return (
               <div key={m} style={{ display:"flex", flexDirection:"column", alignItems:"center", minWidth:52, flex:1 }}>
+                {pendiente && <div style={{ fontSize:10, color:C.yellow, marginBottom:2 }}>⏳</div>}
                 <div style={{ display:"flex", gap:3, alignItems:"flex-end", height:BAR_H+30, marginBottom:4 }}>
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"flex-end", height:"100%" }}>
                     <span style={{ fontSize:8, color:C.red, fontWeight:600, marginBottom:2, textAlign:"center" }}>{Math.round(t.totalGastosUSD).toLocaleString("es-AR")}</span>
@@ -432,10 +433,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
                     <div style={{ width:16, height:iH, background:C.green, borderRadius:"3px 3px 0 0" }} />
                   </div>
                 </div>
-                <div style={{ textAlign:"center" }}>
-                  <div style={{ fontSize:10, color:C.muted }}>{m.slice(0,3)}</div>
-                  {pendiente && <div style={{ fontSize:8, color:C.yellow }}>⏳</div>}
-                </div>
+                <div style={{ fontSize:10, color:C.muted, textAlign:"center" }}>{m.slice(0,3)}</div>
               </div>
             );
           })}
@@ -462,6 +460,7 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
             const pendiente = !liquidaciones[m]?.saldado;
             return (
               <div key={m} style={{ display:"flex", flexDirection:"column", alignItems:"center", minWidth:52, flex:1 }}>
+                {pendiente && <div style={{ fontSize:10, color:C.yellow, marginBottom:1 }}>⏳</div>}
                 <div style={{ fontSize:8, color:C.martin, fontWeight:700, marginBottom:1 }}>{mvPct}%</div>
                 <div style={{ fontSize:8, color:C.fondo, fontWeight:700, marginBottom:2 }}>{foPct}%</div>
                 <div style={{ width:28, height:BAR_H, display:"flex", flexDirection:"column", justifyContent:"flex-end", marginBottom:4, borderRadius:"3px 3px 0 0", overflow:"hidden" }}>
@@ -470,7 +469,6 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
                 </div>
                 <div style={{ fontSize:8, color:C.muted, textAlign:"center" }}>{Math.round(mv).toLocaleString("es-AR")}</div>
                 <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{m.slice(0,3)}</div>
-                {pendiente && <div style={{ fontSize:8, color:C.yellow }}>⏳</div>}
               </div>
             );
           })}
@@ -948,18 +946,6 @@ function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
 
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
-  // Load SheetJS from CDN
-  if (!window.XLSX) {
-    await new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
-  }
-  const XLSX = window.XLSX;
-  const wb = XLSX.utils.book_new();
   const mesesRev = [...mesesActivos].reverse();
 
   const getVal = (mes, catId) => {
@@ -972,114 +958,89 @@ async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liq
     return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
   };
 
-  // ── Hoja 1: GASTOS ──────────────────────────────────────────────────────────
-  const gastosData = [];
-  // Header
-  gastosData.push(['Ítem', ...mesesRev, 'Promedio']);
-  gastosData.push(['MEP (ARS/USD)', ...mesesRev.map(m=>getMep(m,mepExtra)), '']);
+  const fmtN = n => n ? Math.round(n).toLocaleString("es-AR") : '-';
+  const pCol = { martin:"#FB923C", vero:"#4ADE80", fondo:"#C084FC", mixto:"#60A5FA" };
 
-  CATEGORIAS.forEach(cat => {
+  const cellStyle = (bg='#FFFFFF', color='#111827', bold=false, align='right') =>
+    `background:${bg};color:${color};font-weight:${bold?'bold':'normal'};text-align:${align};padding:5px 8px;border:1px solid #D1D5DB;font-size:11px;font-family:Arial,sans-serif;white-space:nowrap;`;
+
+  const HEADER_BG = '#1A1D27', HEADER_COLOR = '#E8E9F3';
+  const TOTAL_BG = '#222536', TOTAL_COLOR = '#818CF8';
+  const ALT_BG = '#F9FAFB';
+
+  // Build HTML
+  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><style>table{border-collapse:collapse}td,th{mso-number-format:"#,##0"}</style></head><body>`;
+
+  // ── Hoja Gastos ──
+  html += `<table><tr><th colspan="${mesesRev.length+2}" style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'center')}">GASTOS 2026</th></tr>`;
+  html += `<tr><th style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'left')}">Ítem</th>`;
+  mesesRev.forEach(m => { html += `<th style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'center')}">${m}</th>`; });
+  html += `<th style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'center')}">Promedio</th></tr>`;
+
+  html += `<tr><td style="${cellStyle('#2E3147','#8B8FA8',false,'left')}">MEP (ARS/USD)</td>`;
+  mesesRev.forEach(m => { html += `<td style="${cellStyle('#2E3147','#8B8FA8',false,'center')}">${getMep(m,mepExtra)}</td>`; });
+  html += `<td style="${cellStyle('#2E3147','#8B8FA8',false,'center')}">-</td></tr>`;
+
+  CATEGORIAS.forEach((cat,idx) => {
+    const bg = idx%2===0?'#FFFFFF':ALT_BG;
     const vals = mesesRev.map(m=>getVal(m,cat.id));
     const conDato = vals.filter(v=>v!==0);
     const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
-    gastosData.push([cat.label, ...vals, prom]);
+    html += `<tr><td style="${cellStyle(bg,'#111827',true,'left')}">${cat.label}</td>`;
+    vals.forEach((v,i) => {
+      const m=mesesRev[i];
+      const pag = PAGADOR_2026[cat.id]?.[m];
+      const cellBg = v&&pag&&pCol[pag] ? pCol[pag]+'22' : bg;
+      const cellColor = v&&pag&&pCol[pag] ? pCol[pag] : '#374151';
+      html += `<td style="${cellStyle(cellBg,cellColor,false,'right')}">${v?fmtN(v):''}</td>`;
+    });
+    html += `<td style="${cellStyle(bg,'#6B7280',false,'right')}">${prom?fmtN(prom):''}</td></tr>`;
   });
 
-  const totalesARS = mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
-  const totalesUSD = mesesRev.map((m,i)=>Math.round(totalesARS[i]/getMep(m,mepExtra)));
-  gastosData.push(['TOTAL $', ...totalesARS.map(v=>Math.round(v)), Math.round(totalesARS.reduce((a,b)=>a+b,0)/mesesRev.length)]);
-  gastosData.push(['TOTAL USD', ...totalesUSD, Math.round(totalesUSD.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  const totARS = mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
+  const totUSD = mesesRev.map((m,i)=>Math.round(totARS[i]/getMep(m,mepExtra)));
+  html += `<tr><td style="${cellStyle(TOTAL_BG,TOTAL_COLOR,true,'left')}">TOTAL $</td>`;
+  totARS.forEach(v => { html += `<td style="${cellStyle(TOTAL_BG,TOTAL_COLOR,true,'right')}">${fmtN(v)}</td>`; });
+  html += `<td style="${cellStyle(TOTAL_BG,TOTAL_COLOR,true,'right')}">${fmtN(totARS.reduce((a,b)=>a+b,0)/mesesRev.length)}</td></tr>`;
 
-  const wsGastos = XLSX.utils.aoa_to_sheet(gastosData);
+  html += `<tr><td style="${cellStyle('#1C1917','#FBBF24',true,'left')}">TOTAL USD</td>`;
+  totUSD.forEach(v => { html += `<td style="${cellStyle('#1C1917','#FBBF24',true,'right')}">${fmtN(v)}</td>`; });
+  html += `<td style="${cellStyle('#1C1917','#FBBF24',true,'right')}">${fmtN(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length)}</td></tr>`;
+  html += `</table><br><br>`;
 
-  // Column widths
-  wsGastos['!cols'] = [{ wch:24 }, ...mesesRev.map(()=>({ wch:14 })), { wch:12 }];
-
-  // Apply styles using SheetJS (basic - cell by cell)
-  const nRows = gastosData.length, nCols = mesesRev.length+2;
-  for (let r=0; r<nRows; r++) {
-    for (let c=0; c<nCols; c++) {
-      const cellRef = XLSX.utils.encode_cell({r,c});
-      if (!wsGastos[cellRef]) continue;
-      wsGastos[cellRef].s = {
-        font: { bold: r===0 || r===1 || r>=nRows-2 || c===0, sz: 11 },
-        fill: r===0 ? { fgColor:{ rgb:'1A1D27' } } :
-              r===1 ? { fgColor:{ rgb:'2E3147' } } :
-              r>=nRows-2 ? { fgColor:{ rgb:'222536' } } :
-              r%2===0 ? { fgColor:{ rgb:'F5F5F5' } } : { fgColor:{ rgb:'FFFFFF' } },
-        font: {
-          bold: r===0||r===1||r>=nRows-2||c===0,
-          color: { rgb: r===0?'E8E9F3': r===1?'8B8FA8': r===nRows-1?'B45309': r===nRows-2?'1D4ED8':'111827' },
-          sz: 11
-        },
-        border: {
-          top:    { style:'thin', color:{ rgb:'D1D5DB' } },
-          bottom: { style:'thin', color:{ rgb:'D1D5DB' } },
-          left:   { style:'thin', color:{ rgb:'D1D5DB' } },
-          right:  { style:'thin', color:{ rgb:'D1D5DB' } },
-        },
-        alignment: { horizontal: c===0?'left':'right', vertical:'center' },
-        numFmt: c>0&&r>1 ? '#,##0' : 'General',
-      };
-    }
-  }
-  wsGastos['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRows-1,c:nCols-1}});
-  XLSX.utils.book_append_sheet(wb, wsGastos, 'Gastos');
-
-  // ── Hoja 2: INGRESOS ────────────────────────────────────────────────────────
-  const ingData = [];
-  ingData.push(['Ingreso', ...mesesRev, 'Promedio']);
-  CATEGORIAS_INGRESO.forEach(ci => {
+  // ── Hoja Ingresos ──
+  html += `<table><tr><th colspan="${mesesRev.length+2}" style="${cellStyle('#166534','#DCFCE7',true,'center')}">INGRESOS 2026</th></tr>`;
+  html += `<tr><th style="${cellStyle('#14532D','#DCFCE7',true,'left')}">Ingreso</th>`;
+  mesesRev.forEach(m => { html += `<th style="${cellStyle('#14532D','#DCFCE7',true,'center')}">${m}</th>`; });
+  html += `<th style="${cellStyle('#14532D','#DCFCE7',true,'center')}">Promedio</th></tr>`;
+  CATEGORIAS_INGRESO.forEach((ci,idx) => {
+    const bg = idx%2===0?'#FFFFFF':ALT_BG;
     const vals = mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
     const conDato = vals.filter(v=>v!==0);
     const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
-    ingData.push([ci.label+(ci.usd?' (USD)':''), ...vals, prom]);
+    html += `<tr><td style="${cellStyle(bg,'#111827',true,'left')}">${ci.label}${ci.usd?' (USD)':''}</td>`;
+    vals.forEach(v => { html += `<td style="${cellStyle(bg,'#166534',false,'right')}">${v?fmtN(v):''}</td>`; });
+    html += `<td style="${cellStyle(bg,'#6B7280',false,'right')}">${prom?fmtN(prom):''}</td></tr>`;
   });
-  const totIng = mesesRev.map(m=>Object.values(getIngresos(m,ingresosCargados)).reduce((a,b)=>a+(b||0),0));
-  ingData.push(['TOTAL', ...totIng.map(v=>Math.round(v)), Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  html += `</table><br><br>`;
 
-  const wsIng = XLSX.utils.aoa_to_sheet(ingData);
-  wsIng['!cols'] = [{ wch:24 }, ...mesesRev.map(()=>({ wch:14 })), { wch:12 }];
-  const nRowsI=ingData.length, nColsI=mesesRev.length+2;
-  for (let r=0;r<nRowsI;r++) for (let c=0;c<nColsI;c++) {
-    const ref=XLSX.utils.encode_cell({r,c});
-    if (!wsIng[ref]) continue;
-    wsIng[ref].s = {
-      font:{ bold:r===0||r===nRowsI-1||c===0, color:{ rgb:r===0?'E8E9F3':r===nRowsI-1?'166534':'111827' }, sz:11 },
-      fill:{ fgColor:{ rgb:r===0?'1A1D27':r===nRowsI-1?'DCFCE7':r%2===0?'F5F5F5':'FFFFFF' } },
-      border:{ top:{style:'thin',color:{rgb:'D1D5DB'}}, bottom:{style:'thin',color:{rgb:'D1D5DB'}}, left:{style:'thin',color:{rgb:'D1D5DB'}}, right:{style:'thin',color:{rgb:'D1D5DB'}} },
-      alignment:{ horizontal:c===0?'left':'right', vertical:'center' },
-      numFmt: c>0&&r>0 ? '#,##0' : 'General',
-    };
-  }
-  wsIng['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRowsI-1,c:nColsI-1}});
-  XLSX.utils.book_append_sheet(wb, wsIng, 'Ingresos');
-
-  // ── Hoja 3: LIQUIDACIONES ───────────────────────────────────────────────────
-  const liqData = [['Mes','Estado','Método','Monto saldado','Fecha']];
+  // ── Liquidaciones ──
+  html += `<table><tr><th colspan="5" style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">LIQUIDACIONES 2026</th></tr>`;
+  html += `<tr><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'left')}">Mes</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">Estado</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">Método</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'right')}">Monto</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">Fecha</th></tr>`;
   mesesRev.forEach(m => {
     const liq=liquidaciones[m];
-    liqData.push([m, liq?.saldado?'✓ Saldado':'⏳ Pendiente', liq?.metodo||'-', liq?.montoPagado||'-', liq?.fecha||'-']);
+    const saldado=liq?.saldado;
+    const bg=saldado?'#DCFCE7':'#FEF3C7', color=saldado?'#166534':'#92400E';
+    html += `<tr><td style="${cellStyle(bg,color,true,'left')}">${m}</td><td style="${cellStyle(bg,color,false,'center')}">${saldado?'✓ Saldado':'⏳ Pendiente'}</td><td style="${cellStyle(bg,color,false,'center')}">${liq?.metodo||'-'}</td><td style="${cellStyle(bg,color,false,'right')}">${liq?.montoPagado?fmtN(liq.montoPagado):'-'}</td><td style="${cellStyle(bg,color,false,'center')}">${liq?.fecha||'-'}</td></tr>`;
   });
-  const wsLiq = XLSX.utils.aoa_to_sheet(liqData);
-  wsLiq['!cols'] = [{wch:16},{wch:14},{wch:16},{wch:16},{wch:14}];
-  const nRowsL=liqData.length;
-  for (let r=0;r<nRowsL;r++) for (let c=0;c<5;c++) {
-    const ref=XLSX.utils.encode_cell({r,c});
-    if (!wsLiq[ref]) continue;
-    const saldado = r>0 && liqData[r][1]==='✓ Saldado';
-    wsLiq[ref].s = {
-      font:{ bold:r===0, color:{ rgb:r===0?'E8E9F3':saldado?'166534':'92400E' }, sz:11 },
-      fill:{ fgColor:{ rgb:r===0?'1A1D27':saldado?'DCFCE7':'FEF3C7' } },
-      border:{ top:{style:'thin',color:{rgb:'D1D5DB'}}, bottom:{style:'thin',color:{rgb:'D1D5DB'}}, left:{style:'thin',color:{rgb:'D1D5DB'}}, right:{style:'thin',color:{rgb:'D1D5DB'}} },
-      alignment:{ horizontal:'center', vertical:'center' },
-    };
-  }
-  wsLiq['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRowsL-1,c:4}});
-  XLSX.utils.book_append_sheet(wb, wsLiq, 'Liquidaciones');
+  html += `</table></body></html>`;
 
-  // Download
-  XLSX.writeFile(wb, 'gastos-familiares-2026.xlsx');
+  const blob = new Blob([html], { type:'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href=url; a.download='gastos-familiares-2026.xls';
+  a.click(); URL.revokeObjectURL(url);
 }
 
 // ── TAB RENTABILIDAD ──────────────────────────────────────────────────────────
