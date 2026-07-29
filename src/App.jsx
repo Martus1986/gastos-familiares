@@ -949,17 +949,6 @@ function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
 
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
-  // Load SheetJS
-  if (!window.XLSX) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-  }
-  const XL = window.XLSX;
-  const wb = XL.utils.book_new();
   const mesesRev = [...mesesActivos].reverse();
 
   const getVal = (mes, catId) => {
@@ -972,114 +961,83 @@ async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liq
     return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
   };
 
-  // Helper to build a sheet with styles using HTML approach inside xlsx
-  const makeStyle = (bgRGB, fgRGB, bold=false, numFmt='#,##0', halign='right') => ({
-    fill: { patternType:'solid', fgColor:{ rgb: bgRGB } },
-    font: { bold, color:{ rgb: fgRGB }, sz:10, name:'Arial' },
-    border: { top:{style:'thin',color:{rgb:'BFBFBF'}}, bottom:{style:'thin',color:{rgb:'BFBFBF'}}, left:{style:'thin',color:{rgb:'BFBFBF'}}, right:{style:'thin',color:{rgb:'BFBFBF'}} },
-    alignment: { horizontal: halign, vertical:'center', wrapText:false },
-    numFmt,
-  });
+  const fmtN = n => n ? Math.round(n).toLocaleString("es-AR") : '';
+  const pagHex = { martin:'#FFE4CC', vero:'#D1FAE5', fondo:'#EDE9FE', mixto:'#DBEAFE' };
+  const pagTextHex = { martin:'#9A3412', vero:'#065F46', fondo:'#5B21B6', mixto:'#1E40AF' };
 
-  const pagColors = { martin:'FB923C', vero:'4ADE80', fondo:'C084FC', mixto:'60A5FA' };
-  const pagBg = (pag) => pag && pagColors[pag] ? pagColors[pag]+'33' : 'FFFFFF';
+  const td = (val, bg='#FFFFFF', color='#1F2937', bold=false, align='right', extra='') =>
+    `<td style="background:${bg};color:${color};font-weight:${bold?'bold':'normal'};text-align:${align};padding:6px 10px;border:1px solid #9CA3AF;font-size:11px;font-family:Calibri,Arial,sans-serif;${extra}">${val}</td>`;
+  const th = (val, bg='#1E3A5F', color='#FFFFFF', align='center', colspan=1) =>
+    `<th ${colspan>1?`colspan="${colspan}"`:''}style="background:${bg};color:${color};font-weight:bold;text-align:${align};padding:7px 10px;border:1px solid #6B7280;font-size:11px;font-family:Calibri,Arial,sans-serif;">${val}</th>`;
 
-  // ── GASTOS SHEET ─────────────────────────────────────────────────────────
-  const gastosAoA = [];
-  const gastosStyles = [];
+  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8">
+<xml><x:ExcelWorkbook><x:ExcelWorksheets>
+<x:ExcelWorksheet><x:Name>Gastos</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
+</x:ExcelWorksheets></x:ExcelWorkbook></xml>
+</head><body>`;
 
-  // Title row
-  gastosAoA.push(['GASTOS 2026', ...mesesRev.map(()=>''), 'Promedio']);
-  gastosStyles.push(Array(mesesRev.length+2).fill(makeStyle('1A1D27','E8E9F3',true,'@','center')));
+  // ── GASTOS ──────────────────────────────────────────────────────────────────
+  html += `<table border="1" cellspacing="0">`;
+  html += `<tr>${th('GASTOS 2026','#1A1D27','#E8E9F3','center',mesesRev.length+2)}</tr>`;
+  html += `<tr>${th('Ítem','#2D3748','#F7FAFC','left')}${mesesRev.map(m=>th(m,'#2D3748','#F7FAFC','center')).join('')}${th('Promedio','#2D3748','#F7FAFC','center')}</tr>`;
+  html += `<tr>${td('MEP (ARS/USD)','#374151','#9CA3AF',true,'left')}${mesesRev.map(m=>td(getMep(m,mepExtra),'#374151','#9CA3AF',false,'center')).join('')}${td('-','#374151','#9CA3AF',false,'center')}</tr>`;
 
-  // Header
-  gastosAoA.push(['Ítem', ...mesesRev, 'Promedio']);
-  gastosStyles.push([makeStyle('2E3147','E8E9F3',true,'@','left'), ...mesesRev.map(()=>makeStyle('2E3147','E8E9F3',true,'@','center')), makeStyle('2E3147','E8E9F3',true,'@','center')]);
-
-  // MEP row
-  gastosAoA.push(['MEP (ARS/USD)', ...mesesRev.map(m=>getMep(m,mepExtra)), '']);
-  gastosStyles.push([makeStyle('374151','9CA3AF',false,'@','left'), ...mesesRev.map(()=>makeStyle('374151','9CA3AF',false,'#,##0','center')), makeStyle('374151','9CA3AF',false,'@','center')]);
-
-  // Category rows
-  CATEGORIAS.forEach((cat, idx) => {
+  CATEGORIAS.forEach((cat,idx)=>{
+    const bg = idx%2===0?'#FFFFFF':'#F9FAFB';
     const vals = mesesRev.map(m=>getVal(m,cat.id));
     const conDato = vals.filter(v=>v!==0);
     const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
-    const rowBg = idx%2===0?'FFFFFF':'F9FAFB';
-    gastosAoA.push([cat.label, ...vals, prom||'']);
-    gastosStyles.push([
-      makeStyle(rowBg,'111827',true,'@','left'),
-      ...vals.map((v,i)=>{ const m=mesesRev[i]; const pag=PAGADOR_2026[cat.id]?.[m]; const bg=v&&pag?pagBg(pag):rowBg; const fc=v&&pag&&pagColors[pag]?pagColors[pag]:'374151'; return makeStyle(bg,fc,false,'#,##0','right'); }),
-      makeStyle(rowBg,'6B7280',false,'#,##0','right'),
-    ]);
+    html += `<tr>${td(cat.label,bg,'#111827',true,'left')}`;
+    vals.forEach((v,i)=>{
+      const m=mesesRev[i]; const pag=PAGADOR_2026[cat.id]?.[m];
+      const cellBg = v&&pag&&pagHex[pag] ? pagHex[pag] : bg;
+      const cellColor = v&&pag&&pagTextHex[pag] ? pagTextHex[pag] : '#374151';
+      html += td(v?fmtN(v):'',cellBg,cellColor,false,'right');
+    });
+    html += td(prom?fmtN(prom):'','#F3F4F6','#6B7280',false,'right')+'</tr>';
   });
 
-  // Total $ row
-  const totARS = mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
-  const promTotARS = Math.round(totARS.reduce((a,b)=>a+b,0)/mesesRev.length);
-  gastosAoA.push(['TOTAL $', ...totARS.map(v=>Math.round(v)), promTotARS]);
-  gastosStyles.push(Array(mesesRev.length+2).fill(makeStyle('222536','818CF8',true,'#,##0','right')).map((s,i)=>i===0?makeStyle('222536','818CF8',true,'@','left'):s));
+  const totARS=mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
+  const totUSD=mesesRev.map((m,i)=>Math.round(totARS[i]/getMep(m,mepExtra)));
+  const promARS=Math.round(totARS.reduce((a,b)=>a+b,0)/mesesRev.length);
+  const promUSD=Math.round(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length);
 
-  // Total USD row
-  const totUSD = mesesRev.map((m,i)=>Math.round(totARS[i]/getMep(m,mepExtra)));
-  const promTotUSD = Math.round(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length);
-  gastosAoA.push(['TOTAL USD', ...totUSD, promTotUSD]);
-  gastosStyles.push(Array(mesesRev.length+2).fill(makeStyle('1C1917','FBBF24',true,'#,##0','right')).map((s,i)=>i===0?makeStyle('1C1917','FBBF24',true,'@','left'):s));
+  html += `<tr>${td('TOTAL $','#312E81','#C7D2FE',true,'left')}${totARS.map(v=>td(fmtN(v),'#312E81','#C7D2FE',true,'right')).join('')}${td(fmtN(promARS),'#312E81','#C7D2FE',true,'right')}</tr>`;
+  html += `<tr>${td('TOTAL USD','#78350F','#FDE68A',true,'left')}${totUSD.map(v=>td(fmtN(v),'#78350F','#FDE68A',true,'right')).join('')}${td(fmtN(promUSD),'#78350F','#FDE68A',true,'right')}</tr>`;
+  html += `</table><br><br>`;
 
-  const wsG = XL.utils.aoa_to_sheet(gastosAoA);
-  wsG['!cols'] = [{wch:26}, ...mesesRev.map(()=>({wch:14})), {wch:12}];
-  wsG['!merges'] = [{s:{r:0,c:0},e:{r:0,c:mesesRev.length+1}}];
-  // Apply styles cell by cell
-  gastosStyles.forEach((row,r)=>row.forEach((style,c)=>{
-    const ref=XL.utils.encode_cell({r,c});
-    if(wsG[ref]) wsG[ref].s=style;
-  }));
-  XL.utils.book_append_sheet(wb, wsG, 'Gastos');
-
-  // ── INGRESOS SHEET ───────────────────────────────────────────────────────
-  const ingAoA = [];
-  const ingStyles = [];
-  ingAoA.push(['INGRESOS 2026', ...mesesRev.map(()=>''), 'Promedio']);
-  ingStyles.push(Array(mesesRev.length+2).fill(makeStyle('166534','DCFCE7',true,'@','center')));
-  ingAoA.push(['Ingreso', ...mesesRev, 'Promedio']);
-  ingStyles.push([makeStyle('14532D','DCFCE7',true,'@','left'), ...mesesRev.map(()=>makeStyle('14532D','DCFCE7',true,'@','center')), makeStyle('14532D','DCFCE7',true,'@','center')]);
+  // ── INGRESOS ────────────────────────────────────────────────────────────────
+  html += `<table border="1" cellspacing="0">`;
+  html += `<tr>${th('INGRESOS 2026','#14532D','#DCFCE7','center',mesesRev.length+2)}</tr>`;
+  html += `<tr>${th('Ingreso','#166534','#D1FAE5','left')}${mesesRev.map(m=>th(m,'#166534','#D1FAE5','center')).join('')}${th('Promedio','#166534','#D1FAE5','center')}</tr>`;
   CATEGORIAS_INGRESO.forEach((ci,idx)=>{
+    const bg=idx%2===0?'#FFFFFF':'#F0FFF4';
     const vals=mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
     const conDato=vals.filter(v=>v!==0);
     const prom=conDato.length?Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length):0;
-    const bg=idx%2===0?'FFFFFF':'F0FFF4';
-    ingAoA.push([ci.label+(ci.usd?' (USD)':''), ...vals, prom||'']);
-    ingStyles.push([makeStyle(bg,'111827',true,'@','left'), ...vals.map(()=>makeStyle(bg,'166534',false,'#,##0','right')), makeStyle(bg,'6B7280',false,'#,##0','right')]);
+    html+=`<tr>${td(ci.label+(ci.usd?' (USD)':''),bg,'#111827',true,'left')}${vals.map(v=>td(v?fmtN(v):'',bg,'#166534',false,'right')).join('')}${td(prom?fmtN(prom):'','#F0FFF4','#6B7280',false,'right')}</tr>`;
   });
   const totIng=mesesRev.map(m=>Object.values(getIngresos(m,ingresosCargados)).reduce((a,b)=>a+(b||0),0));
-  ingAoA.push(['TOTAL', ...totIng.map(v=>Math.round(v)), Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length)]);
-  ingStyles.push(Array(mesesRev.length+2).fill(makeStyle('14532D','DCFCE7',true,'#,##0','right')).map((s,i)=>i===0?makeStyle('14532D','DCFCE7',true,'@','left'):s));
-  const wsI=XL.utils.aoa_to_sheet(ingAoA);
-  wsI['!cols']=[{wch:26},...mesesRev.map(()=>({wch:14})),{wch:12}];
-  wsI['!merges']=[{s:{r:0,c:0},e:{r:0,c:mesesRev.length+1}}];
-  ingStyles.forEach((row,r)=>row.forEach((style,c)=>{const ref=XL.utils.encode_cell({r,c}); if(wsI[ref]) wsI[ref].s=style;}));
-  XL.utils.book_append_sheet(wb, wsI, 'Ingresos');
+  const promIng=Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length);
+  html+=`<tr>${td('TOTAL','#14532D','#DCFCE7',true,'left')}${totIng.map(v=>td(fmtN(v),'#14532D','#DCFCE7',true,'right')).join('')}${td(fmtN(promIng),'#14532D','#DCFCE7',true,'right')}</tr>`;
+  html+=`</table><br><br>`;
 
-  // ── LIQUIDACIONES SHEET ──────────────────────────────────────────────────
-  const liqAoA = [['Mes','Estado','Método','Monto saldado','Fecha']];
-  const liqSt = [Array(5).fill(makeStyle('1E3A5F','BFDBFE',true,'@','center'))];
+  // ── LIQUIDACIONES ───────────────────────────────────────────────────────────
+  html+=`<table border="1" cellspacing="0">`;
+  html+=`<tr>${th('LIQUIDACIONES 2026','#1E3A5F','#BFDBFE','center',5)}</tr>`;
+  html+=`<tr>${th('Mes','#1E3A5F','#BFDBFE','left')}${th('Estado')}${th('Método')}${th('Monto saldado')}${th('Fecha')}</tr>`;
   mesesRev.forEach(m=>{
     const liq=liquidaciones[m]; const s=liq?.saldado;
-    liqAoA.push([m, s?'✓ Saldado':'⏳ Pendiente', liq?.metodo||'-', liq?.montoPagado||0, liq?.fecha||'-']);
-    const bg=s?'DCFCE7':'FEF3C7', fc=s?'166534':'92400E';
-    liqSt.push([makeStyle(bg,fc,true,'@','left'), makeStyle(bg,fc,false,'@','center'), makeStyle(bg,fc,false,'@','center'), makeStyle(bg,fc,false,'#,##0','right'), makeStyle(bg,fc,false,'@','center')]);
+    const bg=s?'#DCFCE7':'#FEF3C7'; const fc=s?'#065F46':'#92400E';
+    html+=`<tr>${td(m,bg,fc,true,'left')}${td(s?'✓ Saldado':'⏳ Pendiente',bg,fc,false,'center')}${td(liq?.metodo||'-',bg,fc,false,'center')}${td(liq?.montoPagado?fmtN(liq.montoPagado):'-',bg,fc,false,'right')}${td(liq?.fecha||'-',bg,fc,false,'center')}</tr>`;
   });
-  const wsL=XL.utils.aoa_to_sheet(liqAoA);
-  wsL['!cols']=[{wch:16},{wch:14},{wch:16},{wch:16},{wch:14}];
-  liqSt.forEach((row,r)=>row.forEach((style,c)=>{const ref=XL.utils.encode_cell({r,c}); if(wsL[ref]) wsL[ref].s=style;}));
-  XL.utils.book_append_sheet(wb, wsL, 'Liquidaciones');
+  html+=`</table></body></html>`;
 
-  // Write with cellStyles option
-  const wbout = XL.write(wb, { bookType:'xlsx', type:'array', cellStyles:true });
-  const blob = new Blob([wbout], { type:'application/octet-stream' });
+  const blob = new Blob([html], { type:'application/vnd.ms-excel;charset=UTF-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download='gastos-familiares-2026.xlsx';
+  a.href=url; a.download='gastos-familiares-2026.xls';
   a.click(); URL.revokeObjectURL(url);
 }
 
