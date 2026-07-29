@@ -463,11 +463,14 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
                 {pendiente && <div style={{ fontSize:10, color:C.yellow, marginBottom:1 }}>⏳</div>}
                 <div style={{ fontSize:8, color:C.martin, fontWeight:700, marginBottom:1 }}>{mvPct}%</div>
                 <div style={{ fontSize:8, color:C.fondo, fontWeight:700, marginBottom:2 }}>{foPct}%</div>
-                <div style={{ width:28, height:BAR_H, display:"flex", flexDirection:"column", justifyContent:"flex-end", marginBottom:4, borderRadius:"3px 3px 0 0", overflow:"hidden" }}>
-                  <div style={{ width:"100%", height:foH, background:C.fondo }} />
-                  <div style={{ width:"100%", height:mvH, background:C.martin }} />
+                <div style={{ width:36, height:BAR_H, display:"flex", flexDirection:"column", justifyContent:"flex-end", marginBottom:4, borderRadius:"3px 3px 0 0", overflow:"hidden", position:"relative" }}>
+                  <div style={{ width:"100%", height:foH, background:C.fondo, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    {foH>16 && <span style={{ fontSize:7, color:"#fff", fontWeight:700, writingMode:"vertical-rl", transform:"rotate(180deg)" }}>{Math.round(fo).toLocaleString("es-AR")}</span>}
+                  </div>
+                  <div style={{ width:"100%", height:mvH, background:C.martin, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                    {mvH>16 && <span style={{ fontSize:7, color:"#fff", fontWeight:700, writingMode:"vertical-rl", transform:"rotate(180deg)" }}>{Math.round(mv).toLocaleString("es-AR")}</span>}
+                  </div>
                 </div>
-                <div style={{ fontSize:8, color:C.muted, textAlign:"center" }}>{Math.round(mv).toLocaleString("es-AR")}</div>
                 <div style={{ fontSize:10, color:C.muted, marginTop:2 }}>{m.slice(0,3)}</div>
               </div>
             );
@@ -946,6 +949,17 @@ function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
 
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
+  // Load SheetJS
+  if (!window.XLSX) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  const XL = window.XLSX;
+  const wb = XL.utils.book_new();
   const mesesRev = [...mesesActivos].reverse();
 
   const getVal = (mes, catId) => {
@@ -958,88 +972,114 @@ async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liq
     return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
   };
 
-  const fmtN = n => n ? Math.round(n).toLocaleString("es-AR") : '-';
-  const pCol = { martin:"#FB923C", vero:"#4ADE80", fondo:"#C084FC", mixto:"#60A5FA" };
+  // Helper to build a sheet with styles using HTML approach inside xlsx
+  const makeStyle = (bgRGB, fgRGB, bold=false, numFmt='#,##0', halign='right') => ({
+    fill: { patternType:'solid', fgColor:{ rgb: bgRGB } },
+    font: { bold, color:{ rgb: fgRGB }, sz:10, name:'Arial' },
+    border: { top:{style:'thin',color:{rgb:'BFBFBF'}}, bottom:{style:'thin',color:{rgb:'BFBFBF'}}, left:{style:'thin',color:{rgb:'BFBFBF'}}, right:{style:'thin',color:{rgb:'BFBFBF'}} },
+    alignment: { horizontal: halign, vertical:'center', wrapText:false },
+    numFmt,
+  });
 
-  const cellStyle = (bg='#FFFFFF', color='#111827', bold=false, align='right') =>
-    `background:${bg};color:${color};font-weight:${bold?'bold':'normal'};text-align:${align};padding:5px 8px;border:1px solid #D1D5DB;font-size:11px;font-family:Arial,sans-serif;white-space:nowrap;`;
+  const pagColors = { martin:'FB923C', vero:'4ADE80', fondo:'C084FC', mixto:'60A5FA' };
+  const pagBg = (pag) => pag && pagColors[pag] ? pagColors[pag]+'33' : 'FFFFFF';
 
-  const HEADER_BG = '#1A1D27', HEADER_COLOR = '#E8E9F3';
-  const TOTAL_BG = '#222536', TOTAL_COLOR = '#818CF8';
-  const ALT_BG = '#F9FAFB';
+  // ── GASTOS SHEET ─────────────────────────────────────────────────────────
+  const gastosAoA = [];
+  const gastosStyles = [];
 
-  // Build HTML
-  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="utf-8"><style>table{border-collapse:collapse}td,th{mso-number-format:"#,##0"}</style></head><body>`;
+  // Title row
+  gastosAoA.push(['GASTOS 2026', ...mesesRev.map(()=>''), 'Promedio']);
+  gastosStyles.push(Array(mesesRev.length+2).fill(makeStyle('1A1D27','E8E9F3',true,'@','center')));
 
-  // ── Hoja Gastos ──
-  html += `<table><tr><th colspan="${mesesRev.length+2}" style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'center')}">GASTOS 2026</th></tr>`;
-  html += `<tr><th style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'left')}">Ítem</th>`;
-  mesesRev.forEach(m => { html += `<th style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'center')}">${m}</th>`; });
-  html += `<th style="${cellStyle(HEADER_BG,HEADER_COLOR,true,'center')}">Promedio</th></tr>`;
+  // Header
+  gastosAoA.push(['Ítem', ...mesesRev, 'Promedio']);
+  gastosStyles.push([makeStyle('2E3147','E8E9F3',true,'@','left'), ...mesesRev.map(()=>makeStyle('2E3147','E8E9F3',true,'@','center')), makeStyle('2E3147','E8E9F3',true,'@','center')]);
 
-  html += `<tr><td style="${cellStyle('#2E3147','#8B8FA8',false,'left')}">MEP (ARS/USD)</td>`;
-  mesesRev.forEach(m => { html += `<td style="${cellStyle('#2E3147','#8B8FA8',false,'center')}">${getMep(m,mepExtra)}</td>`; });
-  html += `<td style="${cellStyle('#2E3147','#8B8FA8',false,'center')}">-</td></tr>`;
+  // MEP row
+  gastosAoA.push(['MEP (ARS/USD)', ...mesesRev.map(m=>getMep(m,mepExtra)), '']);
+  gastosStyles.push([makeStyle('374151','9CA3AF',false,'@','left'), ...mesesRev.map(()=>makeStyle('374151','9CA3AF',false,'#,##0','center')), makeStyle('374151','9CA3AF',false,'@','center')]);
 
-  CATEGORIAS.forEach((cat,idx) => {
-    const bg = idx%2===0?'#FFFFFF':ALT_BG;
+  // Category rows
+  CATEGORIAS.forEach((cat, idx) => {
     const vals = mesesRev.map(m=>getVal(m,cat.id));
     const conDato = vals.filter(v=>v!==0);
     const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
-    html += `<tr><td style="${cellStyle(bg,'#111827',true,'left')}">${cat.label}</td>`;
-    vals.forEach((v,i) => {
-      const m=mesesRev[i];
-      const pag = PAGADOR_2026[cat.id]?.[m];
-      const cellBg = v&&pag&&pCol[pag] ? pCol[pag]+'22' : bg;
-      const cellColor = v&&pag&&pCol[pag] ? pCol[pag] : '#374151';
-      html += `<td style="${cellStyle(cellBg,cellColor,false,'right')}">${v?fmtN(v):''}</td>`;
-    });
-    html += `<td style="${cellStyle(bg,'#6B7280',false,'right')}">${prom?fmtN(prom):''}</td></tr>`;
+    const rowBg = idx%2===0?'FFFFFF':'F9FAFB';
+    gastosAoA.push([cat.label, ...vals, prom||'']);
+    gastosStyles.push([
+      makeStyle(rowBg,'111827',true,'@','left'),
+      ...vals.map((v,i)=>{ const m=mesesRev[i]; const pag=PAGADOR_2026[cat.id]?.[m]; const bg=v&&pag?pagBg(pag):rowBg; const fc=v&&pag&&pagColors[pag]?pagColors[pag]:'374151'; return makeStyle(bg,fc,false,'#,##0','right'); }),
+      makeStyle(rowBg,'6B7280',false,'#,##0','right'),
+    ]);
   });
 
+  // Total $ row
   const totARS = mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
+  const promTotARS = Math.round(totARS.reduce((a,b)=>a+b,0)/mesesRev.length);
+  gastosAoA.push(['TOTAL $', ...totARS.map(v=>Math.round(v)), promTotARS]);
+  gastosStyles.push(Array(mesesRev.length+2).fill(makeStyle('222536','818CF8',true,'#,##0','right')).map((s,i)=>i===0?makeStyle('222536','818CF8',true,'@','left'):s));
+
+  // Total USD row
   const totUSD = mesesRev.map((m,i)=>Math.round(totARS[i]/getMep(m,mepExtra)));
-  html += `<tr><td style="${cellStyle(TOTAL_BG,TOTAL_COLOR,true,'left')}">TOTAL $</td>`;
-  totARS.forEach(v => { html += `<td style="${cellStyle(TOTAL_BG,TOTAL_COLOR,true,'right')}">${fmtN(v)}</td>`; });
-  html += `<td style="${cellStyle(TOTAL_BG,TOTAL_COLOR,true,'right')}">${fmtN(totARS.reduce((a,b)=>a+b,0)/mesesRev.length)}</td></tr>`;
+  const promTotUSD = Math.round(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length);
+  gastosAoA.push(['TOTAL USD', ...totUSD, promTotUSD]);
+  gastosStyles.push(Array(mesesRev.length+2).fill(makeStyle('1C1917','FBBF24',true,'#,##0','right')).map((s,i)=>i===0?makeStyle('1C1917','FBBF24',true,'@','left'):s));
 
-  html += `<tr><td style="${cellStyle('#1C1917','#FBBF24',true,'left')}">TOTAL USD</td>`;
-  totUSD.forEach(v => { html += `<td style="${cellStyle('#1C1917','#FBBF24',true,'right')}">${fmtN(v)}</td>`; });
-  html += `<td style="${cellStyle('#1C1917','#FBBF24',true,'right')}">${fmtN(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length)}</td></tr>`;
-  html += `</table><br><br>`;
+  const wsG = XL.utils.aoa_to_sheet(gastosAoA);
+  wsG['!cols'] = [{wch:26}, ...mesesRev.map(()=>({wch:14})), {wch:12}];
+  wsG['!merges'] = [{s:{r:0,c:0},e:{r:0,c:mesesRev.length+1}}];
+  // Apply styles cell by cell
+  gastosStyles.forEach((row,r)=>row.forEach((style,c)=>{
+    const ref=XL.utils.encode_cell({r,c});
+    if(wsG[ref]) wsG[ref].s=style;
+  }));
+  XL.utils.book_append_sheet(wb, wsG, 'Gastos');
 
-  // ── Hoja Ingresos ──
-  html += `<table><tr><th colspan="${mesesRev.length+2}" style="${cellStyle('#166534','#DCFCE7',true,'center')}">INGRESOS 2026</th></tr>`;
-  html += `<tr><th style="${cellStyle('#14532D','#DCFCE7',true,'left')}">Ingreso</th>`;
-  mesesRev.forEach(m => { html += `<th style="${cellStyle('#14532D','#DCFCE7',true,'center')}">${m}</th>`; });
-  html += `<th style="${cellStyle('#14532D','#DCFCE7',true,'center')}">Promedio</th></tr>`;
-  CATEGORIAS_INGRESO.forEach((ci,idx) => {
-    const bg = idx%2===0?'#FFFFFF':ALT_BG;
-    const vals = mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
-    const conDato = vals.filter(v=>v!==0);
-    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
-    html += `<tr><td style="${cellStyle(bg,'#111827',true,'left')}">${ci.label}${ci.usd?' (USD)':''}</td>`;
-    vals.forEach(v => { html += `<td style="${cellStyle(bg,'#166534',false,'right')}">${v?fmtN(v):''}</td>`; });
-    html += `<td style="${cellStyle(bg,'#6B7280',false,'right')}">${prom?fmtN(prom):''}</td></tr>`;
+  // ── INGRESOS SHEET ───────────────────────────────────────────────────────
+  const ingAoA = [];
+  const ingStyles = [];
+  ingAoA.push(['INGRESOS 2026', ...mesesRev.map(()=>''), 'Promedio']);
+  ingStyles.push(Array(mesesRev.length+2).fill(makeStyle('166534','DCFCE7',true,'@','center')));
+  ingAoA.push(['Ingreso', ...mesesRev, 'Promedio']);
+  ingStyles.push([makeStyle('14532D','DCFCE7',true,'@','left'), ...mesesRev.map(()=>makeStyle('14532D','DCFCE7',true,'@','center')), makeStyle('14532D','DCFCE7',true,'@','center')]);
+  CATEGORIAS_INGRESO.forEach((ci,idx)=>{
+    const vals=mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
+    const conDato=vals.filter(v=>v!==0);
+    const prom=conDato.length?Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length):0;
+    const bg=idx%2===0?'FFFFFF':'F0FFF4';
+    ingAoA.push([ci.label+(ci.usd?' (USD)':''), ...vals, prom||'']);
+    ingStyles.push([makeStyle(bg,'111827',true,'@','left'), ...vals.map(()=>makeStyle(bg,'166534',false,'#,##0','right')), makeStyle(bg,'6B7280',false,'#,##0','right')]);
   });
-  html += `</table><br><br>`;
+  const totIng=mesesRev.map(m=>Object.values(getIngresos(m,ingresosCargados)).reduce((a,b)=>a+(b||0),0));
+  ingAoA.push(['TOTAL', ...totIng.map(v=>Math.round(v)), Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  ingStyles.push(Array(mesesRev.length+2).fill(makeStyle('14532D','DCFCE7',true,'#,##0','right')).map((s,i)=>i===0?makeStyle('14532D','DCFCE7',true,'@','left'):s));
+  const wsI=XL.utils.aoa_to_sheet(ingAoA);
+  wsI['!cols']=[{wch:26},...mesesRev.map(()=>({wch:14})),{wch:12}];
+  wsI['!merges']=[{s:{r:0,c:0},e:{r:0,c:mesesRev.length+1}}];
+  ingStyles.forEach((row,r)=>row.forEach((style,c)=>{const ref=XL.utils.encode_cell({r,c}); if(wsI[ref]) wsI[ref].s=style;}));
+  XL.utils.book_append_sheet(wb, wsI, 'Ingresos');
 
-  // ── Liquidaciones ──
-  html += `<table><tr><th colspan="5" style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">LIQUIDACIONES 2026</th></tr>`;
-  html += `<tr><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'left')}">Mes</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">Estado</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">Método</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'right')}">Monto</th><th style="${cellStyle('#1E3A5F','#BFDBFE',true,'center')}">Fecha</th></tr>`;
-  mesesRev.forEach(m => {
-    const liq=liquidaciones[m];
-    const saldado=liq?.saldado;
-    const bg=saldado?'#DCFCE7':'#FEF3C7', color=saldado?'#166534':'#92400E';
-    html += `<tr><td style="${cellStyle(bg,color,true,'left')}">${m}</td><td style="${cellStyle(bg,color,false,'center')}">${saldado?'✓ Saldado':'⏳ Pendiente'}</td><td style="${cellStyle(bg,color,false,'center')}">${liq?.metodo||'-'}</td><td style="${cellStyle(bg,color,false,'right')}">${liq?.montoPagado?fmtN(liq.montoPagado):'-'}</td><td style="${cellStyle(bg,color,false,'center')}">${liq?.fecha||'-'}</td></tr>`;
+  // ── LIQUIDACIONES SHEET ──────────────────────────────────────────────────
+  const liqAoA = [['Mes','Estado','Método','Monto saldado','Fecha']];
+  const liqSt = [Array(5).fill(makeStyle('1E3A5F','BFDBFE',true,'@','center'))];
+  mesesRev.forEach(m=>{
+    const liq=liquidaciones[m]; const s=liq?.saldado;
+    liqAoA.push([m, s?'✓ Saldado':'⏳ Pendiente', liq?.metodo||'-', liq?.montoPagado||0, liq?.fecha||'-']);
+    const bg=s?'DCFCE7':'FEF3C7', fc=s?'166534':'92400E';
+    liqSt.push([makeStyle(bg,fc,true,'@','left'), makeStyle(bg,fc,false,'@','center'), makeStyle(bg,fc,false,'@','center'), makeStyle(bg,fc,false,'#,##0','right'), makeStyle(bg,fc,false,'@','center')]);
   });
-  html += `</table></body></html>`;
+  const wsL=XL.utils.aoa_to_sheet(liqAoA);
+  wsL['!cols']=[{wch:16},{wch:14},{wch:16},{wch:16},{wch:14}];
+  liqSt.forEach((row,r)=>row.forEach((style,c)=>{const ref=XL.utils.encode_cell({r,c}); if(wsL[ref]) wsL[ref].s=style;}));
+  XL.utils.book_append_sheet(wb, wsL, 'Liquidaciones');
 
-  const blob = new Blob([html], { type:'application/vnd.ms-excel;charset=utf-8;' });
+  // Write with cellStyles option
+  const wbout = XL.write(wb, { bookType:'xlsx', type:'array', cellStyles:true });
+  const blob = new Blob([wbout], { type:'application/octet-stream' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download='gastos-familiares-2026.xls';
+  a.href=url; a.download='gastos-familiares-2026.xlsx';
   a.click(); URL.revokeObjectURL(url);
 }
 
