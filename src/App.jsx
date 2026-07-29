@@ -198,6 +198,7 @@ function MiniBar({ label, value, max, pagador, onExpand, expandido, children }) 
 
 function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingresosCargados, setMepEditMes, setMepEditValor, setModalMep, liquidaciones }) {
   const [expandOtros, setExpandOtros] = useState(false);
+  const [expandExtras, setExpandExtras] = useState(false);
   const t = calcTotales(mes, gastosCargados, mepExtra, ingresosCargados);
   const fijos = GASTOS_FIJOS_2026[mes]||{};
   const ing = getIngresos(mes, ingresosCargados);
@@ -206,6 +207,8 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
   const cargados = gastosCargados[mes]||[];
   const otrosC = cargados.filter(g=>g.categoria==="otros");
   const otrosTotal = esH&&otrosC.length===0 ? (fijos.otros||0) : otrosC.reduce((a,b)=>a+b.monto,0);
+  const extrasC = cargados.filter(g=>g.categoria==="extras");
+  const extrasTotal = esH&&extrasC.length===0 ? (fijos.extras||0) : extrasC.reduce((a,b)=>a+b.monto,0);
   const adelantosM = esH?(ad.martin||0):cargados.filter(g=>g.quien==="martin"&&!g.es_ingreso).reduce((a,b)=>a+b.monto,0);
   const adelantosV = esH?(ad.vero||0):cargados.filter(g=>g.quien==="vero"&&!g.es_ingreso).reduce((a,b)=>a+b.monto,0);
   const diff = adelantosM-adelantosV;
@@ -244,20 +247,24 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
         {esH ? (
           CATEGORIAS.filter(cat=>(fijos[cat.id]&&fijos[cat.id]>0)||cargados.some(g=>g.categoria===cat.id)).map(cat=>{
             const esO = cat.id==="otros";
-            const valor = esO ? otrosTotal : (fijos[cat.id]||0);
-            if (!valor&&!esO) return null;
+            const esE = cat.id==="extras";
+            const valor = esO ? otrosTotal : esE ? extrasTotal : (fijos[cat.id]||0);
+            if (!valor&&!esO&&!esE) return null;
+            const listaDetalle = esO ? otrosC : esE ? extrasC : [];
+            const isExpanded = esO ? expandOtros : esE ? expandExtras : false;
+            const onExpand = esO ? ()=>setExpandOtros(e=>!e) : esE&&extrasC.length>0 ? ()=>setExpandExtras(e=>!e) : null;
             return (
               <MiniBar key={cat.id} label={cat.label} value={valor} max={t.totalGastos} pagador={PAGADOR_2026[cat.id]?.[mes]||null}
-                onExpand={esO?()=>setExpandOtros(e=>!e):null} expandido={esO&&expandOtros}>
-                {otrosC.length>0 ? (<>
-                  {otrosC.map((g,i)=>(
+                onExpand={onExpand} expandido={isExpanded}>
+                {listaDetalle.length>0 ? (<>
+                  {listaDetalle.map((g,i)=>(
                     <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion}</span></div>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion||cat.label}</span></div>
                       <span style={{ fontSize:12, fontWeight:700 }}>{fmt(g.monto)}</span>
                     </div>
                   ))}
                   <div style={S.divider}/>
-                  {["martin","vero","fondo"].map(q=>{ const tot=otrosC.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}
+                  {["martin","vero","fondo"].map(q=>{ const tot=listaDetalle.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}
                 </>) : <div style={{ color:C.muted, fontSize:12 }}>Sin detalle — valor del Excel</div>}
               </MiniBar>
             );
@@ -265,26 +272,33 @@ function TabResumen({ mes, setMes, mesesActivos, gastosCargados, mepExtra, ingre
         ) : (
           (() => {
             const gastosNoIngreso = cargados.filter(g=>!g.es_ingreso);
-            const otrosNuevos = gastosNoIngreso.filter(g=>g.categoria==="otros");
-            const otrosTotal = otrosNuevos.reduce((a,b)=>a+b.monto,0);
-            const resto = gastosNoIngreso.filter(g=>g.categoria!=="otros");
+            // Group by categoria for new months
+            const grouped = {};
+            gastosNoIngreso.forEach(g => { if(!grouped[g.categoria]) grouped[g.categoria]=[]; grouped[g.categoria].push(g); });
+            const cats = Object.keys(grouped);
             return (<>
-              {resto.map((g,i)=>(
-                <MiniBar key={i} label={CATEGORIAS.find(c=>c.id===g.categoria)?.label||g.categoria} value={g.monto} max={t.totalGastos||1} pagador={g.quien} />
-              ))}
-              {otrosNuevos.length>0 && (
-                <MiniBar label="Otros del mes" value={otrosTotal} max={t.totalGastos||1} pagador={null}
-                  onExpand={()=>setExpandOtros(e=>!e)} expandido={expandOtros}>
-                  {otrosNuevos.map((g,i)=>(
-                    <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion}</span></div>
-                      <span style={{ fontSize:12, fontWeight:700 }}>{fmt(g.monto)}</span>
-                    </div>
-                  ))}
-                  <div style={S.divider}/>
-                  {["martin","vero","fondo"].map(q=>{ const tot=otrosNuevos.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}
-                </MiniBar>
-              )}
+              {cats.map(catId => {
+                const items = grouped[catId];
+                const total = items.reduce((a,b)=>a+b.monto,0);
+                const label = CATEGORIAS.find(c=>c.id===catId)?.label||catId;
+                const esAgrupable = catId==="otros"||catId==="extras";
+                const isExpand = catId==="otros" ? expandOtros : catId==="extras" ? expandExtras : false;
+                const setExpand = catId==="otros" ? ()=>setExpandOtros(e=>!e) : catId==="extras" ? ()=>setExpandExtras(e=>!e) : null;
+                return (
+                  <MiniBar key={catId} label={label} value={total} max={t.totalGastos||1}
+                    pagador={items.length===1?items[0].quien:null}
+                    onExpand={esAgrupable&&items.length>0?setExpand:null} expandido={isExpand}>
+                    {items.map((g,i)=>(
+                      <div key={i} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:6 }}><span style={S.tag(g.quien)}>{PL[g.quien]}</span><span style={{ fontSize:12 }}>{g.descripcion||label}</span></div>
+                        <span style={{ fontSize:12, fontWeight:700 }}>{fmt(g.monto)}</span>
+                      </div>
+                    ))}
+                    {items.length>1&&<><div style={S.divider}/>
+                    {["martin","vero","fondo"].map(q=>{ const tot=items.filter(g=>g.quien===q).reduce((a,b)=>a+b.monto,0); return tot?<div key={q} style={{ display:"flex", justifyContent:"space-between", fontSize:12, marginBottom:3 }}><span style={{ color:PC[q], fontWeight:600 }}>{PL[q]}</span><span style={{ fontWeight:700 }}>{fmt(tot)}</span></div>:null; })}</>}
+                  </MiniBar>
+                );
+              })}
               {gastosNoIngreso.length===0 && <div style={{ color:C.muted, fontSize:13 }}>Sin gastos cargados este mes</div>}
             </>);
           })()
@@ -933,20 +947,21 @@ function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
 }
 
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
-function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
+async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
+  // Load SheetJS from CDN
+  if (!window.XLSX) {
+    await new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  const XLSX = window.XLSX;
+  const wb = XLSX.utils.book_new();
   const mesesRev = [...mesesActivos].reverse();
-  const rows = [];
 
-  // ── TABLA DE GASTOS ──
-  // Header row: Ítem | Mes1 | Mes2 | ... | Promedio
-  const headerGastos = ['GASTOS', ...mesesRev, 'Promedio'];
-  rows.push(headerGastos);
-
-  // Sub-header MEP
-  const mepRow = ['MEP (ARS/USD)', ...mesesRev.map(m => getMep(m, mepExtra)), ''];
-  rows.push(mepRow);
-
-  // One row per category
   const getVal = (mes, catId) => {
     const fijos = GASTOS_FIJOS_2026[mes]||{};
     const cargados = gastosCargados[mes]||[];
@@ -957,48 +972,114 @@ function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaci
     return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
   };
 
+  // ── Hoja 1: GASTOS ──────────────────────────────────────────────────────────
+  const gastosData = [];
+  // Header
+  gastosData.push(['Ítem', ...mesesRev, 'Promedio']);
+  gastosData.push(['MEP (ARS/USD)', ...mesesRev.map(m=>getMep(m,mepExtra)), '']);
+
   CATEGORIAS.forEach(cat => {
-    const vals = mesesRev.map(m => getVal(m, cat.id));
+    const vals = mesesRev.map(m=>getVal(m,cat.id));
     const conDato = vals.filter(v=>v!==0);
-    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : '';
-    rows.push([cat.label, ...vals.map(v=>v||''), prom]);
+    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
+    gastosData.push([cat.label, ...vals, prom]);
   });
 
-  // Total $ row
-  const totalesARS = mesesRev.map(m => CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
-  rows.push(['TOTAL $', ...totalesARS.map(v=>Math.round(v)), '']);
+  const totalesARS = mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
+  const totalesUSD = mesesRev.map((m,i)=>Math.round(totalesARS[i]/getMep(m,mepExtra)));
+  gastosData.push(['TOTAL $', ...totalesARS.map(v=>Math.round(v)), Math.round(totalesARS.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  gastosData.push(['TOTAL USD', ...totalesUSD, Math.round(totalesUSD.reduce((a,b)=>a+b,0)/mesesRev.length)]);
 
-  // Total USD row
-  const totalesUSD = mesesRev.map((m,i) => Math.round(totalesARS[i]/getMep(m,mepExtra)));
-  rows.push(['TOTAL USD', ...totalesUSD, '']);
+  const wsGastos = XLSX.utils.aoa_to_sheet(gastosData);
 
-  rows.push([]); // blank row
+  // Column widths
+  wsGastos['!cols'] = [{ wch:24 }, ...mesesRev.map(()=>({ wch:14 })), { wch:12 }];
 
-  // ── TABLA DE INGRESOS ──
-  rows.push(['INGRESOS', ...mesesRev, 'Promedio']);
+  // Apply styles using SheetJS (basic - cell by cell)
+  const nRows = gastosData.length, nCols = mesesRev.length+2;
+  for (let r=0; r<nRows; r++) {
+    for (let c=0; c<nCols; c++) {
+      const cellRef = XLSX.utils.encode_cell({r,c});
+      if (!wsGastos[cellRef]) continue;
+      wsGastos[cellRef].s = {
+        font: { bold: r===0 || r===1 || r>=nRows-2 || c===0, sz: 11 },
+        fill: r===0 ? { fgColor:{ rgb:'1A1D27' } } :
+              r===1 ? { fgColor:{ rgb:'2E3147' } } :
+              r>=nRows-2 ? { fgColor:{ rgb:'222536' } } :
+              r%2===0 ? { fgColor:{ rgb:'F5F5F5' } } : { fgColor:{ rgb:'FFFFFF' } },
+        font: {
+          bold: r===0||r===1||r>=nRows-2||c===0,
+          color: { rgb: r===0?'E8E9F3': r===1?'8B8FA8': r===nRows-1?'B45309': r===nRows-2?'1D4ED8':'111827' },
+          sz: 11
+        },
+        border: {
+          top:    { style:'thin', color:{ rgb:'D1D5DB' } },
+          bottom: { style:'thin', color:{ rgb:'D1D5DB' } },
+          left:   { style:'thin', color:{ rgb:'D1D5DB' } },
+          right:  { style:'thin', color:{ rgb:'D1D5DB' } },
+        },
+        alignment: { horizontal: c===0?'left':'right', vertical:'center' },
+        numFmt: c>0&&r>1 ? '#,##0' : 'General',
+      };
+    }
+  }
+  wsGastos['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRows-1,c:nCols-1}});
+  XLSX.utils.book_append_sheet(wb, wsGastos, 'Gastos');
+
+  // ── Hoja 2: INGRESOS ────────────────────────────────────────────────────────
+  const ingData = [];
+  ingData.push(['Ingreso', ...mesesRev, 'Promedio']);
   CATEGORIAS_INGRESO.forEach(ci => {
-    const vals = mesesRev.map(m => getIngresos(m, ingresosCargados)[ci.id]||'');
-    const conDato = vals.filter(v=>v&&v!==0);
-    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : '';
-    rows.push([ci.label+(ci.usd?' (USD)':''), ...vals, prom]);
+    const vals = mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
+    const conDato = vals.filter(v=>v!==0);
+    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
+    ingData.push([ci.label+(ci.usd?' (USD)':''), ...vals, prom]);
   });
+  const totIng = mesesRev.map(m=>Object.values(getIngresos(m,ingresosCargados)).reduce((a,b)=>a+(b||0),0));
+  ingData.push(['TOTAL', ...totIng.map(v=>Math.round(v)), Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length)]);
 
-  rows.push([]); // blank row
+  const wsIng = XLSX.utils.aoa_to_sheet(ingData);
+  wsIng['!cols'] = [{ wch:24 }, ...mesesRev.map(()=>({ wch:14 })), { wch:12 }];
+  const nRowsI=ingData.length, nColsI=mesesRev.length+2;
+  for (let r=0;r<nRowsI;r++) for (let c=0;c<nColsI;c++) {
+    const ref=XLSX.utils.encode_cell({r,c});
+    if (!wsIng[ref]) continue;
+    wsIng[ref].s = {
+      font:{ bold:r===0||r===nRowsI-1||c===0, color:{ rgb:r===0?'E8E9F3':r===nRowsI-1?'166534':'111827' }, sz:11 },
+      fill:{ fgColor:{ rgb:r===0?'1A1D27':r===nRowsI-1?'DCFCE7':r%2===0?'F5F5F5':'FFFFFF' } },
+      border:{ top:{style:'thin',color:{rgb:'D1D5DB'}}, bottom:{style:'thin',color:{rgb:'D1D5DB'}}, left:{style:'thin',color:{rgb:'D1D5DB'}}, right:{style:'thin',color:{rgb:'D1D5DB'}} },
+      alignment:{ horizontal:c===0?'left':'right', vertical:'center' },
+      numFmt: c>0&&r>0 ? '#,##0' : 'General',
+    };
+  }
+  wsIng['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRowsI-1,c:nColsI-1}});
+  XLSX.utils.book_append_sheet(wb, wsIng, 'Ingresos');
 
-  // ── LIQUIDACIONES ──
-  rows.push(['LIQUIDACIONES', 'Estado', 'Método', 'Monto', 'Fecha']);
+  // ── Hoja 3: LIQUIDACIONES ───────────────────────────────────────────────────
+  const liqData = [['Mes','Estado','Método','Monto saldado','Fecha']];
   mesesRev.forEach(m => {
-    const liq = liquidaciones[m];
-    rows.push([m, liq?.saldado?'Saldado':'Pendiente', liq?.metodo||'', liq?.montoPagado||'', liq?.fecha||'']);
+    const liq=liquidaciones[m];
+    liqData.push([m, liq?.saldado?'✓ Saldado':'⏳ Pendiente', liq?.metodo||'-', liq?.montoPagado||'-', liq?.fecha||'-']);
   });
+  const wsLiq = XLSX.utils.aoa_to_sheet(liqData);
+  wsLiq['!cols'] = [{wch:16},{wch:14},{wch:16},{wch:16},{wch:14}];
+  const nRowsL=liqData.length;
+  for (let r=0;r<nRowsL;r++) for (let c=0;c<5;c++) {
+    const ref=XLSX.utils.encode_cell({r,c});
+    if (!wsLiq[ref]) continue;
+    const saldado = r>0 && liqData[r][1]==='✓ Saldado';
+    wsLiq[ref].s = {
+      font:{ bold:r===0, color:{ rgb:r===0?'E8E9F3':saldado?'166534':'92400E' }, sz:11 },
+      fill:{ fgColor:{ rgb:r===0?'1A1D27':saldado?'DCFCE7':'FEF3C7' } },
+      border:{ top:{style:'thin',color:{rgb:'D1D5DB'}}, bottom:{style:'thin',color:{rgb:'D1D5DB'}}, left:{style:'thin',color:{rgb:'D1D5DB'}}, right:{style:'thin',color:{rgb:'D1D5DB'}} },
+      alignment:{ horizontal:'center', vertical:'center' },
+    };
+  }
+  wsLiq['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0},e:{r:nRowsL-1,c:4}});
+  XLSX.utils.book_append_sheet(wb, wsLiq, 'Liquidaciones');
 
-  // Build CSV
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF'+csv], { type:'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = 'gastos-familiares-2026.csv';
-  a.click(); URL.revokeObjectURL(url);
+  // Download
+  XLSX.writeFile(wb, 'gastos-familiares-2026.xlsx');
 }
 
 // ── TAB RENTABILIDAD ──────────────────────────────────────────────────────────
