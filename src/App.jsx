@@ -949,6 +949,16 @@ function TabTabla({ mesesActivos, gastosCargados, mepExtra }) {
 
 // ── EXPORTAR EXCEL ────────────────────────────────────────────────────────────
 async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liquidaciones, mepExtra) {
+  // Load ExcelJS from CDN
+  if (!window.ExcelJS) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+
   const mesesRev = [...mesesActivos].reverse();
 
   const getVal = (mes, catId) => {
@@ -961,83 +971,133 @@ async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liq
     return cargados.filter(g=>g.categoria===catId).reduce((a,b)=>a+b.monto,0);
   };
 
-  const fmtN = n => n ? Math.round(n).toLocaleString("es-AR") : '';
-  const pagHex = { martin:'#FFE4CC', vero:'#D1FAE5', fondo:'#EDE9FE', mixto:'#DBEAFE' };
-  const pagTextHex = { martin:'#9A3412', vero:'#065F46', fondo:'#5B21B6', mixto:'#1E40AF' };
+  const wb = new window.ExcelJS.Workbook();
+  wb.creator = 'Gastos Familiares';
 
-  const td = (val, bg='#FFFFFF', color='#1F2937', bold=false, align='right', extra='') =>
-    `<td style="background:${bg};color:${color};font-weight:${bold?'bold':'normal'};text-align:${align};padding:6px 10px;border:1px solid #9CA3AF;font-size:11px;font-family:Calibri,Arial,sans-serif;${extra}">${val}</td>`;
-  const th = (val, bg='#1E3A5F', color='#FFFFFF', align='center', colspan=1) =>
-    `<th ${colspan>1?`colspan="${colspan}"`:''}style="background:${bg};color:${color};font-weight:bold;text-align:${align};padding:7px 10px;border:1px solid #6B7280;font-size:11px;font-family:Calibri,Arial,sans-serif;">${val}</th>`;
+  const pagBg = { martin:'FFE4CC', vero:'D1FAE5', fondo:'EDE9FE', mixto:'DBEAFE' };
+  const pagFg = { martin:'9A3412', vero:'065F46', fondo:'5B21B6', mixto:'1E40AF' };
 
-  let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-<head><meta charset="UTF-8">
-<xml><x:ExcelWorkbook><x:ExcelWorksheets>
-<x:ExcelWorksheet><x:Name>Gastos</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet>
-</x:ExcelWorksheets></x:ExcelWorkbook></xml>
-</head><body>`;
+  const border = { top:{style:'thin',color:{argb:'FF9CA3AF'}}, bottom:{style:'thin',color:{argb:'FF9CA3AF'}}, left:{style:'thin',color:{argb:'FF9CA3AF'}}, right:{style:'thin',color:{argb:'FF9CA3AF'}} };
 
-  // ── GASTOS ──────────────────────────────────────────────────────────────────
-  html += `<table border="1" cellspacing="0">`;
-  html += `<tr>${th('GASTOS 2026','#1A1D27','#E8E9F3','center',mesesRev.length+2)}</tr>`;
-  html += `<tr>${th('Ítem','#2D3748','#F7FAFC','left')}${mesesRev.map(m=>th(m,'#2D3748','#F7FAFC','center')).join('')}${th('Promedio','#2D3748','#F7FAFC','center')}</tr>`;
-  html += `<tr>${td('MEP (ARS/USD)','#374151','#9CA3AF',true,'left')}${mesesRev.map(m=>td(getMep(m,mepExtra),'#374151','#9CA3AF',false,'center')).join('')}${td('-','#374151','#9CA3AF',false,'center')}</tr>`;
+  const applyCell = (cell, value, bgARGB, fgARGB, bold=false, align='right', numFmt=null) => {
+    cell.value = value;
+    cell.font = { bold, color:{ argb:'FF'+fgARGB }, name:'Calibri', size:11 };
+    cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF'+bgARGB } };
+    cell.border = border;
+    cell.alignment = { horizontal:align, vertical:'middle' };
+    if (numFmt) cell.numFmt = numFmt;
+  };
 
-  CATEGORIAS.forEach((cat,idx)=>{
-    const bg = idx%2===0?'#FFFFFF':'#F9FAFB';
+  // ── GASTOS ────────────────────────────────────────────────────────────────
+  const wsG = wb.addWorksheet('Gastos');
+  wsG.columns = [{ width:26 }, ...mesesRev.map(()=>({ width:14 })), { width:13 }];
+
+  // Title
+  const titleG = wsG.addRow(['GASTOS 2026', ...mesesRev.map(()=>''), 'Promedio']);
+  titleG.eachCell(cell => applyCell(cell, cell.value, '1A1D27', 'E8E9F3', true, 'center'));
+  wsG.mergeCells(1, 1, 1, mesesRev.length+2);
+
+  // Header
+  const headerG = wsG.addRow(['Ítem', ...mesesRev, 'Promedio']);
+  headerG.getCell(1).value = 'Ítem';
+  applyCell(headerG.getCell(1), 'Ítem', '2D3748', 'F7FAFC', true, 'left');
+  mesesRev.forEach((m,i) => applyCell(headerG.getCell(i+2), m, '2D3748', 'F7FAFC', true, 'center'));
+  applyCell(headerG.getCell(mesesRev.length+2), 'Promedio', '2D3748', 'F7FAFC', true, 'center');
+
+  // MEP row
+  const mepRow = wsG.addRow(['MEP (ARS/USD)', ...mesesRev.map(m=>getMep(m,mepExtra)), '']);
+  applyCell(mepRow.getCell(1), 'MEP (ARS/USD)', '374151', '9CA3AF', false, 'left');
+  mesesRev.forEach((m,i) => applyCell(mepRow.getCell(i+2), getMep(m,mepExtra), '374151', '9CA3AF', false, 'center'));
+  applyCell(mepRow.getCell(mesesRev.length+2), '-', '374151', '9CA3AF', false, 'center');
+
+  // Categories
+  CATEGORIAS.forEach((cat, idx) => {
+    const bg = idx%2===0 ? 'FFFFFF' : 'F9FAFB';
     const vals = mesesRev.map(m=>getVal(m,cat.id));
     const conDato = vals.filter(v=>v!==0);
     const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
-    html += `<tr>${td(cat.label,bg,'#111827',true,'left')}`;
-    vals.forEach((v,i)=>{
+    const row = wsG.addRow([cat.label, ...vals, prom||'']);
+    applyCell(row.getCell(1), cat.label, bg, '111827', true, 'left');
+    vals.forEach((v,i) => {
       const m=mesesRev[i]; const pag=PAGADOR_2026[cat.id]?.[m];
-      const cellBg = v&&pag&&pagHex[pag] ? pagHex[pag] : bg;
-      const cellColor = v&&pag&&pagTextHex[pag] ? pagTextHex[pag] : '#374151';
-      html += td(v?fmtN(v):'',cellBg,cellColor,false,'right');
+      const cellBg = v&&pag&&pagBg[pag] ? pagBg[pag] : bg;
+      const cellFg = v&&pag&&pagFg[pag] ? pagFg[pag] : '374151';
+      applyCell(row.getCell(i+2), v||'', cellBg, cellFg, false, 'right', v?'#,##0':null);
     });
-    html += td(prom?fmtN(prom):'','#F3F4F6','#6B7280',false,'right')+'</tr>';
+    applyCell(row.getCell(mesesRev.length+2), prom||'', 'F3F4F6', '6B7280', false, 'right', prom?'#,##0':null);
   });
 
-  const totARS=mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
-  const totUSD=mesesRev.map((m,i)=>Math.round(totARS[i]/getMep(m,mepExtra)));
-  const promARS=Math.round(totARS.reduce((a,b)=>a+b,0)/mesesRev.length);
-  const promUSD=Math.round(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length);
+  // Totals
+  const totARS = mesesRev.map(m=>CATEGORIAS.reduce((a,cat)=>a+getVal(m,cat.id),0));
+  const totUSD = mesesRev.map((m,i)=>Math.round(totARS[i]/getMep(m,mepExtra)));
+  const rowTotARS = wsG.addRow(['TOTAL $', ...totARS.map(v=>Math.round(v)), Math.round(totARS.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  applyCell(rowTotARS.getCell(1), 'TOTAL $', '312E81', 'C7D2FE', true, 'left');
+  totARS.forEach((v,i) => applyCell(rowTotARS.getCell(i+2), Math.round(v), '312E81', 'C7D2FE', true, 'right', '#,##0'));
+  applyCell(rowTotARS.getCell(mesesRev.length+2), Math.round(totARS.reduce((a,b)=>a+b,0)/mesesRev.length), '312E81', 'C7D2FE', true, 'right', '#,##0');
 
-  html += `<tr>${td('TOTAL $','#312E81','#C7D2FE',true,'left')}${totARS.map(v=>td(fmtN(v),'#312E81','#C7D2FE',true,'right')).join('')}${td(fmtN(promARS),'#312E81','#C7D2FE',true,'right')}</tr>`;
-  html += `<tr>${td('TOTAL USD','#78350F','#FDE68A',true,'left')}${totUSD.map(v=>td(fmtN(v),'#78350F','#FDE68A',true,'right')).join('')}${td(fmtN(promUSD),'#78350F','#FDE68A',true,'right')}</tr>`;
-  html += `</table><br><br>`;
+  const rowTotUSD = wsG.addRow(['TOTAL USD', ...totUSD, Math.round(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  applyCell(rowTotUSD.getCell(1), 'TOTAL USD', '78350F', 'FDE68A', true, 'left');
+  totUSD.forEach((v,i) => applyCell(rowTotUSD.getCell(i+2), v, '78350F', 'FDE68A', true, 'right', '#,##0'));
+  applyCell(rowTotUSD.getCell(mesesRev.length+2), Math.round(totUSD.reduce((a,b)=>a+b,0)/mesesRev.length), '78350F', 'FDE68A', true, 'right', '#,##0');
 
-  // ── INGRESOS ────────────────────────────────────────────────────────────────
-  html += `<table border="1" cellspacing="0">`;
-  html += `<tr>${th('INGRESOS 2026','#14532D','#DCFCE7','center',mesesRev.length+2)}</tr>`;
-  html += `<tr>${th('Ingreso','#166534','#D1FAE5','left')}${mesesRev.map(m=>th(m,'#166534','#D1FAE5','center')).join('')}${th('Promedio','#166534','#D1FAE5','center')}</tr>`;
-  CATEGORIAS_INGRESO.forEach((ci,idx)=>{
-    const bg=idx%2===0?'#FFFFFF':'#F0FFF4';
-    const vals=mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
-    const conDato=vals.filter(v=>v!==0);
-    const prom=conDato.length?Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length):0;
-    html+=`<tr>${td(ci.label+(ci.usd?' (USD)':''),bg,'#111827',true,'left')}${vals.map(v=>td(v?fmtN(v):'',bg,'#166534',false,'right')).join('')}${td(prom?fmtN(prom):'','#F0FFF4','#6B7280',false,'right')}</tr>`;
+  // ── INGRESOS ──────────────────────────────────────────────────────────────
+  const wsI = wb.addWorksheet('Ingresos');
+  wsI.columns = [{ width:26 }, ...mesesRev.map(()=>({ width:14 })), { width:13 }];
+
+  const titleI = wsI.addRow(['INGRESOS 2026']);
+  applyCell(titleI.getCell(1), 'INGRESOS 2026', '14532D', 'DCFCE7', true, 'center');
+  wsI.mergeCells(1, 1, 1, mesesRev.length+2);
+
+  const headerI = wsI.addRow(['Ingreso', ...mesesRev, 'Promedio']);
+  applyCell(headerI.getCell(1), 'Ingreso', '166534', 'D1FAE5', true, 'left');
+  mesesRev.forEach((m,i) => applyCell(headerI.getCell(i+2), m, '166534', 'D1FAE5', true, 'center'));
+  applyCell(headerI.getCell(mesesRev.length+2), 'Promedio', '166534', 'D1FAE5', true, 'center');
+
+  CATEGORIAS_INGRESO.forEach((ci,idx) => {
+    const bg = idx%2===0 ? 'FFFFFF' : 'F0FFF4';
+    const vals = mesesRev.map(m=>getIngresos(m,ingresosCargados)[ci.id]||0);
+    const conDato = vals.filter(v=>v!==0);
+    const prom = conDato.length ? Math.round(conDato.reduce((a,b)=>a+b,0)/conDato.length) : 0;
+    const row = wsI.addRow([ci.label+(ci.usd?' (USD)':''), ...vals, prom||'']);
+    applyCell(row.getCell(1), ci.label+(ci.usd?' (USD)':''), bg, '111827', true, 'left');
+    vals.forEach((v,i) => applyCell(row.getCell(i+2), v||'', bg, '166534', false, 'right', v?'#,##0':null));
+    applyCell(row.getCell(mesesRev.length+2), prom||'', 'F0FFF4', '6B7280', false, 'right', prom?'#,##0':null);
   });
-  const totIng=mesesRev.map(m=>Object.values(getIngresos(m,ingresosCargados)).reduce((a,b)=>a+(b||0),0));
-  const promIng=Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length);
-  html+=`<tr>${td('TOTAL','#14532D','#DCFCE7',true,'left')}${totIng.map(v=>td(fmtN(v),'#14532D','#DCFCE7',true,'right')).join('')}${td(fmtN(promIng),'#14532D','#DCFCE7',true,'right')}</tr>`;
-  html+=`</table><br><br>`;
 
-  // ── LIQUIDACIONES ───────────────────────────────────────────────────────────
-  html+=`<table border="1" cellspacing="0">`;
-  html+=`<tr>${th('LIQUIDACIONES 2026','#1E3A5F','#BFDBFE','center',5)}</tr>`;
-  html+=`<tr>${th('Mes','#1E3A5F','#BFDBFE','left')}${th('Estado')}${th('Método')}${th('Monto saldado')}${th('Fecha')}</tr>`;
-  mesesRev.forEach(m=>{
+  const totIng = mesesRev.map(m=>Object.values(getIngresos(m,ingresosCargados)).reduce((a,b)=>a+(b||0),0));
+  const rowTotI = wsI.addRow(['TOTAL', ...totIng.map(v=>Math.round(v)), Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length)]);
+  applyCell(rowTotI.getCell(1), 'TOTAL', '14532D', 'DCFCE7', true, 'left');
+  totIng.forEach((v,i) => applyCell(rowTotI.getCell(i+2), Math.round(v), '14532D', 'DCFCE7', true, 'right', '#,##0'));
+  applyCell(rowTotI.getCell(mesesRev.length+2), Math.round(totIng.reduce((a,b)=>a+b,0)/mesesRev.length), '14532D', 'DCFCE7', true, 'right', '#,##0');
+
+  // ── LIQUIDACIONES ──────────────────────────────────────────────────────────
+  const wsL = wb.addWorksheet('Liquidaciones');
+  wsL.columns = [{width:16},{width:14},{width:16},{width:16},{width:14}];
+
+  const titleL = wsL.addRow(['LIQUIDACIONES 2026']);
+  applyCell(titleL.getCell(1), 'LIQUIDACIONES 2026', '1E3A5F', 'BFDBFE', true, 'center');
+  wsL.mergeCells(1,1,1,5);
+
+  const headerL = wsL.addRow(['Mes','Estado','Método','Monto','Fecha']);
+  ['Mes','Estado','Método','Monto','Fecha'].forEach((h,i) => applyCell(headerL.getCell(i+1), h, '1E3A5F', 'BFDBFE', true, i===0?'left':'center'));
+
+  mesesRev.forEach(m => {
     const liq=liquidaciones[m]; const s=liq?.saldado;
-    const bg=s?'#DCFCE7':'#FEF3C7'; const fc=s?'#065F46':'#92400E';
-    html+=`<tr>${td(m,bg,fc,true,'left')}${td(s?'✓ Saldado':'⏳ Pendiente',bg,fc,false,'center')}${td(liq?.metodo||'-',bg,fc,false,'center')}${td(liq?.montoPagado?fmtN(liq.montoPagado):'-',bg,fc,false,'right')}${td(liq?.fecha||'-',bg,fc,false,'center')}</tr>`;
+    const bg=s?'DCFCE7':'FEF3C7'; const fc=s?'065F46':'92400E';
+    const row = wsL.addRow([m, s?'✓ Saldado':'⏳ Pendiente', liq?.metodo||'-', liq?.montoPagado||0, liq?.fecha||'-']);
+    applyCell(row.getCell(1), m, bg, fc, true, 'left');
+    applyCell(row.getCell(2), s?'✓ Saldado':'⏳ Pendiente', bg, fc, false, 'center');
+    applyCell(row.getCell(3), liq?.metodo||'-', bg, fc, false, 'center');
+    applyCell(row.getCell(4), liq?.montoPagado||0, bg, fc, false, 'right', '#,##0');
+    applyCell(row.getCell(5), liq?.fecha||'-', bg, fc, false, 'center');
   });
-  html+=`</table></body></html>`;
 
-  const blob = new Blob([html], { type:'application/vnd.ms-excel;charset=UTF-8' });
+  // Download
+  const buffer = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href=url; a.download='gastos-familiares-2026.xls';
+  a.href=url; a.download='gastos-familiares-2026.xlsx';
   a.click(); URL.revokeObjectURL(url);
 }
 
