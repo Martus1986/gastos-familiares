@@ -505,8 +505,250 @@ function TabGraficos({ mesesActivos, gastosCargados, mepExtra, liquidaciones, in
 }
 
 
+// ── VISTA TABLA EDITABLE (meses en columnas, ítems en filas) ─────────────────
+function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
+  const labelW = 130;
+  const colW = 80;
+
+  // Estado local: { [mes]: { [catId]: { monto, quien, descripcion } } }
+  const [datos, setDatos] = useState(() => {
+    const d = {};
+    mesesActivos.forEach(mes => {
+      d[mes] = {};
+      const esH = MESES_HISTORICOS.includes(mes);
+      const fijos = GASTOS_FIJOS_2026[mes] || {};
+      const cargados = gastosCargados[mes] || [];
+      CATEGORIAS.forEach(cat => {
+        if (esH) {
+          const otrosC = cargados.filter(g => g.categoria === cat.id);
+          const monto = cat.id === "otros"
+            ? (otrosC.length > 0 ? otrosC.reduce((a,b)=>a+b.monto,0) : (fijos[cat.id]||0))
+            : (fijos[cat.id] || 0);
+          d[mes][cat.id] = { monto: monto || 0, quien: PAGADOR_2026[cat.id]?.[mes] || "martin", descripcion: "", esH: true };
+        } else {
+          const items = cargados.filter(g => g.categoria === cat.id);
+          const monto = items.reduce((a,b)=>a+b.monto,0);
+          d[mes][cat.id] = { monto, quien: items[0]?.quien || "martin", descripcion: items[0]?.descripcion || "", esH: false };
+        }
+      });
+    });
+    return d;
+  });
+
+  // Popup de edición
+  const [popup, setPopup] = useState(null); // { mes, catId, monto, quien, descripcion }
+  const [guardando, setGuardando] = useState(false);
+  const [guardado, setGuardado] = useState(false);
+  const montoRef = useRef(null);
+
+  const mesesRev = [...mesesActivos].reverse();
+
+  const getVal = (mes, catId) => datos[mes]?.[catId] || { monto: 0, quien: "martin", descripcion: "" };
+
+  const abrirPopup = (mes, catId) => {
+    const esH = MESES_HISTORICOS.includes(mes);
+    if (esH) return; // solo lectura para históricos
+    const v = getVal(mes, catId);
+    setPopup({ mes, catId, monto: v.monto > 0 ? String(v.monto) : "", quien: v.quien, descripcion: v.descripcion });
+    setTimeout(() => montoRef.current?.focus(), 80);
+  };
+
+  const confirmarPopup = () => {
+    if (!popup) return;
+    const monto = parseFloat(popup.monto) || 0;
+    setDatos(prev => ({
+      ...prev,
+      [popup.mes]: {
+        ...prev[popup.mes],
+        [popup.catId]: { monto, quien: popup.quien, descripcion: popup.descripcion, esH: false }
+      }
+    }));
+    setPopup(null);
+  };
+
+  const guardarTodo = async () => {
+    setGuardando(true);
+    const updatedGastos = { ...gastosCargados };
+    mesesActivos.forEach(mes => {
+      if (MESES_HISTORICOS.includes(mes)) return;
+      const nuevos = [];
+      CATEGORIAS.forEach(cat => {
+        const d = datos[mes]?.[cat.id];
+        if (d && d.monto > 0) {
+          nuevos.push({ categoria: cat.id, descripcion: d.descripcion || cat.label, monto: d.monto, quien: d.quien, fecha: new Date().toLocaleDateString("es-AR") });
+        }
+      });
+      updatedGastos[mes] = nuevos;
+    });
+    setGastosCargados(updatedGastos);
+    await guardarDato('gastos_cargados', updatedGastos);
+    setGuardando(false);
+    setGuardado(true);
+    setTimeout(() => setGuardado(false), 2500);
+  };
+
+  const fmtK = n => n >= 1000 ? `${(n/1000).toFixed(0)}k` : n > 0 ? String(Math.round(n)) : '';
+  const hayMesesNuevos = mesesActivos.some(m => !MESES_HISTORICOS.includes(m));
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* Leyenda */}
+      <div style={{ display:"flex", gap:10, marginBottom:10, flexWrap:"wrap", alignItems:"center" }}>
+        {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"]].map(([k,l])=>(
+          <div key={k} style={{ display:"flex", alignItems:"center", gap:4 }}>
+            <div style={{ width:10, height:10, borderRadius:2, background:PC[k] }} />
+            <span style={{ fontSize:11, color:C.muted }}>{l}</span>
+          </div>
+        ))}
+        <span style={{ fontSize:11, color:C.muted, marginLeft:4 }}>· Tocá una celda para editar</span>
+      </div>
+
+      {/* Tabla */}
+      <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", borderRadius:12, border:`1px solid ${C.border}` }}>
+        <table style={{ borderCollapse:"collapse", minWidth: labelW + colW * mesesActivos.length }}>
+          <thead>
+            <tr>
+              <th style={{ background:C.surface, color:C.muted, fontSize:11, fontWeight:600, padding:"9px 10px", textAlign:"left", position:"sticky", left:0, zIndex:3, minWidth:labelW, borderBottom:`1px solid ${C.border}`, borderRight:`1px solid ${C.border}` }}>
+                Ítem
+              </th>
+              {mesesRev.map(m => {
+                const esH = MESES_HISTORICOS.includes(m);
+                return (
+                  <th key={m} style={{ background:C.surface, color: esH ? C.muted : C.text, fontSize:11, fontWeight:700, padding:"9px 6px", textAlign:"center", minWidth:colW, borderBottom:`1px solid ${C.border}`, borderRight:`1px solid ${C.border}`, whiteSpace:"nowrap" }}>
+                    {m.slice(0,3)} {esH ? <span style={{color:C.border}}>●</span> : <span style={{color:C.accent}}>✏️</span>}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {CATEGORIAS.map((cat, rowIdx) => {
+              const rowBg = rowIdx % 2 === 0 ? C.card : C.surface;
+              return (
+                <tr key={cat.id}>
+                  <td style={{ background:rowBg, color:C.text, fontSize:11, fontWeight:600, padding:"7px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}44`, whiteSpace:"nowrap" }}>
+                    {cat.label}
+                  </td>
+                  {mesesRev.map(m => {
+                    const esH = MESES_HISTORICOS.includes(m);
+                    const v = getVal(m, cat.id);
+                    const monto = v.monto || 0;
+                    const quien = v.quien || "martin";
+                    const pColor = PC[quien] || C.muted;
+                    const cellBg = monto > 0 ? pColor + "22" : rowBg;
+                    return (
+                      <td key={m}
+                        onClick={() => abrirPopup(m, cat.id)}
+                        style={{
+                          background: cellBg,
+                          color: monto > 0 ? pColor : C.border,
+                          fontSize: 11, fontWeight: monto > 0 ? 700 : 400,
+                          padding: "7px 6px", textAlign:"center",
+                          borderRight:`1px solid ${C.border}`,
+                          borderBottom:`1px solid ${C.border}44`,
+                          whiteSpace:"nowrap",
+                          cursor: esH ? "default" : "pointer",
+                          transition:"background 0.1s",
+                          userSelect:"none",
+                        }}>
+                        {monto > 0 ? fmtK(monto) : (esH ? "–" : <span style={{fontSize:14, color:C.border+"66"}}>+</span>)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+            {/* TOTAL row */}
+            <tr>
+              <td style={{ background:C.surface, color:C.text, fontSize:12, fontWeight:800, padding:"9px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderTop:`2px solid ${C.border}` }}>
+                TOTAL $
+              </td>
+              {mesesRev.map(m => {
+                const total = CATEGORIAS.reduce((a,cat) => a + (getVal(m,cat.id).monto||0), 0);
+                return (
+                  <td key={m} style={{ background:C.surface, color:C.accent, fontSize:11, fontWeight:800, padding:"9px 6px", textAlign:"center", borderRight:`1px solid ${C.border}`, borderTop:`2px solid ${C.border}` }}>
+                    {total > 0 ? fmtK(total) : "–"}
+                  </td>
+                );
+              })}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {hayMesesNuevos && (
+        <button onClick={guardarTodo} disabled={guardando}
+          style={{ marginTop:14, background:guardado?C.green:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:700, fontSize:14, cursor:"pointer", width:"100%", opacity:guardando?0.7:1 }}>
+          {guardando ? "Guardando..." : guardado ? "✓ Guardado" : "💾 Guardar cambios"}
+        </button>
+      )}
+
+      {/* Popup edición celda */}
+      {popup && (
+        <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+          onClick={e => { if (e.target === e.currentTarget) setPopup(null); }}>
+          <div style={{ background:C.surface, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:420, boxSizing:"border-box", border:`1px solid ${C.border}`, paddingBottom:34 }}>
+            {/* Header popup */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <div>
+                <div style={{ fontWeight:800, fontSize:16, color:C.text }}>{CATEGORIAS.find(c=>c.id===popup.catId)?.label}</div>
+                <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>{popup.mes}</div>
+              </div>
+              <button onClick={()=>setPopup(null)} style={{ background:"transparent", border:"none", color:C.muted, fontSize:22, cursor:"pointer", padding:0, lineHeight:1 }}>×</button>
+            </div>
+
+            {/* Quién pagó */}
+            <div style={{ fontSize:12, color:C.muted, marginBottom:8, fontWeight:600 }}>¿Quién pagó?</div>
+            <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+              {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"]].map(([q,l])=>(
+                <button key={q} onClick={()=>setPopup(p=>({...p,quien:q}))}
+                  style={{ flex:1, padding:"11px 4px", borderRadius:10, border:`2px solid ${popup.quien===q?PC[q]:C.border}`, background:popup.quien===q?PC[q]+"33":"transparent", color:popup.quien===q?PC[q]:C.muted, fontWeight:700, cursor:"pointer", fontSize:14, transition:"all 0.12s" }}>
+                  {l}
+                </button>
+              ))}
+            </div>
+
+            {/* Monto */}
+            <div style={{ fontSize:12, color:C.muted, marginBottom:8, fontWeight:600 }}>Monto $</div>
+            <input
+              ref={montoRef}
+              type="text" inputMode="decimal"
+              value={popup.monto}
+              onChange={e=>setPopup(p=>({...p,monto:e.target.value}))}
+              onKeyDown={e=>e.key==="Enter"&&confirmarPopup()}
+              placeholder="0"
+              style={{ ...S.input, fontSize:22, fontWeight:800, textAlign:"right", color:PC[popup.quien]||C.accent, borderColor:PC[popup.quien]||C.border, marginBottom:12 }}
+            />
+
+            {/* Descripción (solo para otros/extras) */}
+            {(popup.catId==="otros"||popup.catId==="extras") && (<>
+              <div style={{ fontSize:12, color:C.muted, marginBottom:8, fontWeight:600 }}>Descripción {popup.catId==="otros"?"(requerida)":"(opcional)"}</div>
+              <input type="text" value={popup.descripcion} onChange={e=>setPopup(p=>({...p,descripcion:e.target.value}))}
+                placeholder="Ej: cena, regalo, etc."
+                style={{ ...S.input, marginBottom:12 }} />
+            </>)}
+
+            {/* Botones */}
+            <div style={{ display:"flex", gap:10, marginTop:4 }}>
+              {parseFloat(popup.monto)>0 && (
+                <button onClick={()=>{ setPopup(p=>({...p,monto:""})); setTimeout(()=>montoRef.current?.focus(),50); }}
+                  style={{ ...S.btn(C.red,true), flex:0, padding:"11px 16px", width:"auto" }}>Borrar</button>
+              )}
+              <button onClick={confirmarPopup}
+                style={{ flex:1, background:PC[popup.quien]||C.accent, color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:700, fontSize:15, cursor:"pointer" }}>
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra, mes, setMes }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
+  const [vistaCargar, setVistaCargar] = useState("formulario"); // "formulario" | "tabla"
   const [modo, setModo] = useState("gasto"); // "gasto" | "ingreso"
   const [form, setForm] = useState({ mes:mes, categoria:"otros", descripcion:"", monto:"", quien:"martin" });
   const [formIng, setFormIng] = useState({ mes:mes, tipo:"alq_sanmartin", monto:"" });
@@ -582,6 +824,20 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
 
   return (
     <div style={S.section}>
+      {/* Selector vista: Formulario / Tabla */}
+      <div style={{ display:"flex", gap:6, marginBottom:14, background:C.surface, borderRadius:12, padding:4 }}>
+        {[["formulario","📝 Formulario"],["tabla","📊 Tabla"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setVistaCargar(v)} style={{ flex:1, padding:"9px 0", borderRadius:8, border:"none", background:vistaCargar===v?C.accent:"transparent", color:vistaCargar===v?"#fff":C.muted, fontWeight:700, cursor:"pointer", fontSize:13, transition:"all 0.15s" }}>{l}</button>
+        ))}
+      </div>
+
+      {/* Vista TABLA */}
+      {vistaCargar==="tabla" && (
+        <TablaEditable mes={mes} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} mesesActivos={mesesActivos} setMes={setMes} />
+      )}
+
+      {/* Vista FORMULARIO */}
+      {vistaCargar==="formulario" && (<>
       {/* Tab switcher gasto/ingreso */}
       <div style={{ display:"flex", gap:8, marginBottom:14 }}>
         {[["gasto","💸 Gasto"],["ingreso","💰 Ingreso"]].map(([m,l])=>(
@@ -669,6 +925,7 @@ function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCa
           ))}
         </div>
       ))}
+      </>)}
     </div>
   );
 }
