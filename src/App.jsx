@@ -1455,6 +1455,73 @@ async function exportarExcel(mesesActivos, gastosCargados, ingresosCargados, liq
   a.click(); URL.revokeObjectURL(url);
 }
 
+// ── TAB BACKUPS ───────────────────────────────────────────────────────────────
+function TabBackups({ setGastosCargados, setIngresosCargados, setLiquidaciones }) {
+  const [backups, setBackups] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [restaurando, setRestaurando] = useState(null);
+  const [confirmando, setConfirmando] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.from('datos_app').select('id,actualizado_en').like('id', '%_backup_%').order('actualizado_en', { ascending: false });
+      setBackups(data || []);
+      setCargando(false);
+    })();
+  }, []);
+
+  const restaurar = async (backup) => {
+    setRestaurando(backup.id);
+    const { data } = await supabase.from('datos_app').select('valor').eq('id', backup.id).single();
+    if (!data?.valor) { setMsg("No se pudo leer el backup"); setRestaurando(null); return; }
+    // Determinar qué clave original es
+    const originalId = backup.id.replace(/_backup_\d{4}-\d{2}-\d{2}$/, '');
+    await guardarDato(originalId, data.valor);
+    if (originalId === 'gastos_cargados') setGastosCargados(data.valor);
+    else if (originalId === 'ingresos_cargados') setIngresosCargados(data.valor);
+    else if (originalId === 'liquidaciones') setLiquidaciones(data.valor);
+    setMsg(`✅ Restaurado: ${originalId} al ${backup.id.match(/\d{4}-\d{2}-\d{2}$/)?.[0]}`);
+    setRestaurando(null);
+    setConfirmando(null);
+  };
+
+  const formatId = id => {
+    const match = id.match(/^(.+)_backup_(\d{4}-\d{2}-\d{2})$/);
+    if (!match) return id;
+    const nombres = { gastos_cargados: '💸 Gastos', ingresos_cargados: '💰 Ingresos', liquidaciones: '⚖️ Liquidaciones' };
+    return `${nombres[match[1]] || match[1]} — ${match[2]}`;
+  };
+
+  return (
+    <div style={S.section}>
+      <div style={{ fontWeight:800, fontSize:18, marginBottom:4 }}>🗄️ Backups</div>
+      <div style={{ color:C.muted, fontSize:13, marginBottom:16 }}>Se genera un backup automático cada vez que guardás datos (uno por día).</div>
+      {msg && <div style={{ background:C.green+"22", color:C.green, borderRadius:10, padding:"10px 14px", marginBottom:12, fontSize:14 }}>{msg}</div>}
+      {cargando ? <div style={{ color:C.muted }}>Cargando backups...</div> : backups.length === 0 ? <div style={{ color:C.muted }}>No hay backups disponibles aún.</div> : (
+        backups.map(b => (
+          <div key={b.id} style={{ ...S.card, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <div>
+              <div style={{ fontWeight:700, fontSize:14 }}>{formatId(b.id)}</div>
+              <div style={{ color:C.muted, fontSize:12 }}>{new Date(b.actualizado_en).toLocaleString("es-AR")}</div>
+            </div>
+            {confirmando === b.id ? (
+              <div style={{ display:"flex", gap:8 }}>
+                <button onClick={() => setConfirmando(null)} style={{ ...S.btn(C.muted, true), width:"auto", padding:"6px 14px", fontSize:13 }}>Cancelar</button>
+                <button onClick={() => restaurar(b)} disabled={restaurando === b.id} style={{ ...S.btn(C.red), width:"auto", padding:"6px 14px", fontSize:13 }}>
+                  {restaurando === b.id ? "..." : "Confirmar"}
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => setConfirmando(b.id)} style={{ ...S.btn(C.accent, true), width:"auto", padding:"6px 14px", fontSize:13 }}>Restaurar</button>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 // ── TAB RENTABILIDAD ──────────────────────────────────────────────────────────
 function TabRentabilidad({ mesesActivos, mepExtra, ingresosCargados, gastosCargados, valorProps, setValorProps }) {
   const [editando, setEditando] = useState(false);
