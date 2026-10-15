@@ -1,4 +1,3 @@
-js
 import { createClient } from '@supabase/supabase-js'
 const URL = 'https://qxlbarrnraukiixsuxfx.supabase.co'
 const KEY = 'sb_publishable_SI6PHWAhs8LxD_k4DtA9Wg_0smfN8xi'
@@ -10,7 +9,6 @@ export async function leerDato(id) {
 }
 
 export async function guardarDato(id, valor) {
-  // Guardar backup con fecha antes de pisar el valor actual
   try {
     const hoy = new Date().toISOString().slice(0, 10);
     const backupId = `${id}_backup_${hoy}`;
@@ -21,6 +19,6 @@ export async function guardarDato(id, valor) {
         await supabase.from('datos_app').upsert({ id: backupId, valor: actual.valor, actualizado_en: new Date().toISOString() });
       }
     }
-  } catch(e) { /* backup falla silenciosamente */ }
+  } catch(e) {}
   await supabase.from('datos_app').upsert({ id, valor, actualizado_en: new Date().toISOString() })
 }
