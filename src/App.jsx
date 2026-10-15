@@ -510,85 +510,124 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
   const labelW = 130;
   const colW = 80;
 
-  // Estado local: { [mes]: { [catId]: { monto, quien, descripcion } } }
-  const [datos, setDatos] = useState(() => {
-    const d = {};
-    mesesActivos.forEach(mes => {
-      d[mes] = {};
-      const esH = MESES_HISTORICOS.includes(mes);
-      const fijos = GASTOS_FIJOS_2026[mes] || {};
-      const cargados = gastosCargados[mes] || [];
-      CATEGORIAS.forEach(cat => {
-        if (esH) {
-          const otrosC = cargados.filter(g => g.categoria === cat.id);
-          const monto = cat.id === "otros"
-            ? (otrosC.length > 0 ? otrosC.reduce((a,b)=>a+b.monto,0) : (fijos[cat.id]||0))
-            : (fijos[cat.id] || 0);
-          d[mes][cat.id] = { monto: monto || 0, quien: PAGADOR_2026[cat.id]?.[mes] || "martin", descripcion: "", esH: true };
-        } else {
-          const items = cargados.filter(g => g.categoria === cat.id);
-          const monto = items.reduce((a,b)=>a+b.monto,0);
-          d[mes][cat.id] = { monto, quien: items[0]?.quien || "martin", descripcion: items[0]?.descripcion || "", esH: false };
-        }
-      });
-    });
-    return d;
-  });
-
-  // Popup de edición
-  const [popup, setPopup] = useState(null); // { mes, catId, monto, quien, descripcion }
+  // popupMulti: para "otros" y "extras" — lista de items individuales
+  // popup: para el resto de categorías — edición simple
+  const [popup, setPopup] = useState(null);       // { mes, catId, monto, quien, descripcion }
+  const [popupMulti, setPopupMulti] = useState(null); // { mes, catId, items: [...], nuevo: {monto,quien,desc} }
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado] = useState(false);
   const montoRef = useRef(null);
+  const montoMultiRef = useRef(null);
 
   const mesesRev = [...mesesActivos].reverse();
+  const MULTI_CATS = ["otros", "extras"]; // categorías con múltiples items
 
-  const getVal = (mes, catId) => datos[mes]?.[catId] || { monto: 0, quien: "martin", descripcion: "" };
+  // Obtener items de una categoría en un mes (desde gastosCargados)
+  const getItems = (mes, catId) => (gastosCargados[mes] || []).filter(g => g.categoria === catId);
 
-  const abrirPopup = (mes, catId) => {
-    const esH = MESES_HISTORICOS.includes(mes);
-    if (esH) return; // solo lectura para históricos
-    const v = getVal(mes, catId);
-    setPopup({ mes, catId, monto: v.monto > 0 ? String(v.monto) : "", quien: v.quien, descripcion: v.descripcion });
-    setTimeout(() => montoRef.current?.focus(), 80);
+  // Obtener valor simple (para categorías no-multi)
+  const getVal = (mes, catId) => {
+    const items = getItems(mes, catId);
+    if (items.length > 0) return { monto: items[0].monto, quien: items[0].quien, descripcion: items[0].descripcion };
+    if (MESES_HISTORICOS.includes(mes)) {
+      const fijos = GASTOS_FIJOS_2026[mes] || {};
+      return { monto: fijos[catId] || 0, quien: PAGADOR_2026[catId]?.[mes] || "martin", descripcion: "" };
+    }
+    return { monto: 0, quien: "martin", descripcion: "" };
   };
 
-  const confirmarPopup = () => {
+  // Monto total de una categoría en un mes
+  const getTotal = (mes, catId) => {
+    const esH = MESES_HISTORICOS.includes(mes);
+    if (MULTI_CATS.includes(catId)) {
+      const items = getItems(mes, catId);
+      if (items.length > 0) return items.reduce((a,b) => a + b.monto, 0);
+      if (esH) return GASTOS_FIJOS_2026[mes]?.[catId] || 0;
+      return 0;
+    }
+    return getVal(mes, catId).monto || 0;
+  };
+
+  // Color dominante de una categoría en un mes (para celdas multi: el que pagó más)
+  const getQuien = (mes, catId) => {
+    if (MULTI_CATS.includes(catId)) {
+      const items = getItems(mes, catId);
+      if (items.length === 0) {
+        if (MESES_HISTORICOS.includes(mes)) return PAGADOR_2026[catId]?.[mes] || "martin";
+        return "martin";
+      }
+      // El que pagó más monto
+      const totals = {};
+      items.forEach(it => { totals[it.quien] = (totals[it.quien]||0) + it.monto; });
+      return Object.entries(totals).sort((a,b)=>b[1]-a[1])[0][0];
+    }
+    return getVal(mes, catId).quien;
+  };
+
+  const abrirPopup = (mes, catId) => {
+    if (MESES_HISTORICOS.includes(mes)) return;
+    if (MULTI_CATS.includes(catId)) {
+      // Popup multi: lista de items existentes + formulario para agregar
+      const items = getItems(mes, catId);
+      setPopupMulti({ mes, catId, items: [...items], nuevo: { monto: "", quien: "martin", descripcion: "" }, editIdx: null });
+      setTimeout(() => montoMultiRef.current?.focus(), 80);
+    } else {
+      const v = getVal(mes, catId);
+      setPopup({ mes, catId, monto: v.monto > 0 ? String(v.monto) : "", quien: v.quien, descripcion: v.descripcion });
+      setTimeout(() => montoRef.current?.focus(), 80);
+    }
+  };
+
+  // Guardar popup simple
+  const confirmarPopup = async () => {
     if (!popup) return;
     const monto = parseFloat(popup.monto) || 0;
-    setDatos(prev => ({
-      ...prev,
-      [popup.mes]: {
-        ...prev[popup.mes],
-        [popup.catId]: { monto, quien: popup.quien, descripcion: popup.descripcion, esH: false }
-      }
-    }));
+    const originales = gastosCargados[popup.mes] || [];
+    let nuevos;
+    if (monto > 0) {
+      const item = { categoria: popup.catId, descripcion: popup.descripcion || CATEGORIAS.find(c=>c.id===popup.catId)?.label, monto, quien: popup.quien, fecha: new Date().toLocaleDateString("es-AR") };
+      const sinEsta = originales.filter(g => g.categoria !== popup.catId);
+      nuevos = [...sinEsta, item];
+    } else {
+      nuevos = originales.filter(g => g.categoria !== popup.catId);
+    }
+    const updated = { ...gastosCargados, [popup.mes]: nuevos };
+    setGastosCargados(updated);
+    await guardarDato('gastos_cargados', updated);
     setPopup(null);
   };
 
-  const guardarTodo = async () => {
-    setGuardando(true);
-    const updatedGastos = { ...gastosCargados };
-    mesesActivos.forEach(mes => {
-      if (MESES_HISTORICOS.includes(mes)) return;
-      const nuevos = [];
-      CATEGORIAS.forEach(cat => {
-        const d = datos[mes]?.[cat.id];
-        if (d && d.monto > 0) {
-          nuevos.push({ categoria: cat.id, descripcion: d.descripcion || cat.label, monto: d.monto, quien: d.quien, fecha: new Date().toLocaleDateString("es-AR") });
-        }
-      });
-      updatedGastos[mes] = nuevos;
-    });
-    setGastosCargados(updatedGastos);
-    await guardarDato('gastos_cargados', updatedGastos);
-    setGuardando(false);
-    setGuardado(true);
-    setTimeout(() => setGuardado(false), 2500);
+  // Agregar item en popup multi
+  const agregarItemMulti = () => {
+    if (!popupMulti) return;
+    const monto = parseFloat(popupMulti.nuevo.monto) || 0;
+    if (monto <= 0) return;
+    if (popupMulti.catId === "otros" && !popupMulti.nuevo.descripcion.trim()) return;
+    const nuevoItem = { categoria: popupMulti.catId, descripcion: popupMulti.nuevo.descripcion.trim() || popupMulti.catId, monto, quien: popupMulti.nuevo.quien, fecha: new Date().toLocaleDateString("es-AR") };
+    setPopupMulti(p => ({ ...p, items: [...p.items, nuevoItem], nuevo: { monto: "", quien: "martin", descripcion: "" } }));
+    setTimeout(() => montoMultiRef.current?.focus(), 50);
   };
 
-  const fmtK = n => n >= 1000 ? `${(n/1000).toFixed(0)}k` : n > 0 ? String(Math.round(n)) : '';
-  const hayMesesNuevos = mesesActivos.some(m => !MESES_HISTORICOS.includes(m));
+  // Borrar item en popup multi
+  const borrarItemMulti = (idx) => {
+    setPopupMulti(p => ({ ...p, items: p.items.filter((_,i) => i !== idx) }));
+  };
+
+  // Guardar popup multi a Supabase
+  const confirmarPopupMulti = async () => {
+    if (!popupMulti) return;
+    setGuardando(true);
+    const originales = gastosCargados[popupMulti.mes] || [];
+    const sinEsta = originales.filter(g => g.categoria !== popupMulti.catId);
+    const nuevos = [...sinEsta, ...popupMulti.items];
+    const updated = { ...gastosCargados, [popupMulti.mes]: nuevos };
+    setGastosCargados(updated);
+    await guardarDato('gastos_cargados', updated);
+    setGuardando(false);
+    setPopupMulti(null);
+  };
+
+  const fmtK = n => n >= 1000 ? `${(n/1000).toFixed(0)}k` : n > 0 ? String(Math.round(n)) : "";
 
   return (
     <div style={{ position: "relative" }}>
@@ -624,25 +663,25 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
           <tbody>
             {CATEGORIAS.map((cat, rowIdx) => {
               const rowBg = rowIdx % 2 === 0 ? C.card : C.surface;
+              const esMulti = MULTI_CATS.includes(cat.id);
               return (
                 <tr key={cat.id}>
                   <td style={{ background:rowBg, color:C.text, fontSize:11, fontWeight:600, padding:"7px 10px", position:"sticky", left:0, zIndex:1, borderRight:`1px solid ${C.border}`, borderBottom:`1px solid ${C.border}44`, whiteSpace:"nowrap" }}>
-                    {cat.label}
+                    {cat.label}{esMulti ? <span style={{ color:C.accent, fontSize:9, marginLeft:4 }}>▤</span> : ""}
                   </td>
                   {mesesRev.map(m => {
                     const esH = MESES_HISTORICOS.includes(m);
-                    const v = getVal(m, cat.id);
-                    const monto = v.monto || 0;
-                    const quien = v.quien || "martin";
+                    const total = getTotal(m, cat.id);
+                    const quien = getQuien(m, cat.id);
                     const pColor = PC[quien] || C.muted;
-                    const cellBg = monto > 0 ? pColor + "22" : rowBg;
+                    const nItems = esMulti ? getItems(m, cat.id).length : 0;
                     return (
                       <td key={m}
                         onClick={() => abrirPopup(m, cat.id)}
                         style={{
-                          background: cellBg,
-                          color: monto > 0 ? pColor : C.border,
-                          fontSize: 11, fontWeight: monto > 0 ? 700 : 400,
+                          background: total > 0 ? pColor + "22" : rowBg,
+                          color: total > 0 ? pColor : C.border,
+                          fontSize: 11, fontWeight: total > 0 ? 700 : 400,
                           padding: "7px 6px", textAlign:"center",
                           borderRight:`1px solid ${C.border}`,
                           borderBottom:`1px solid ${C.border}44`,
@@ -650,8 +689,12 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
                           cursor: esH ? "default" : "pointer",
                           transition:"background 0.1s",
                           userSelect:"none",
+                          position:"relative",
                         }}>
-                        {monto > 0 ? fmtK(monto) : (esH ? "–" : <span style={{fontSize:14, color:C.border+"66"}}>+</span>)}
+                        {total > 0
+                          ? <>{fmtK(total)}{esMulti && nItems > 1 ? <span style={{ fontSize:8, opacity:0.7, marginLeft:2 }}>({nItems})</span> : ""}</>
+                          : (esH ? "–" : <span style={{fontSize:14, color:C.border+"66"}}>+</span>)
+                        }
                       </td>
                     );
                   })}
@@ -664,7 +707,7 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
                 TOTAL $
               </td>
               {mesesRev.map(m => {
-                const total = CATEGORIAS.reduce((a,cat) => a + (getVal(m,cat.id).monto||0), 0);
+                const total = CATEGORIAS.reduce((a,cat) => a + getTotal(m, cat.id), 0);
                 return (
                   <td key={m} style={{ background:C.surface, color:C.accent, fontSize:11, fontWeight:800, padding:"9px 6px", textAlign:"center", borderRight:`1px solid ${C.border}`, borderTop:`2px solid ${C.border}` }}>
                     {total > 0 ? fmtK(total) : "–"}
@@ -676,19 +719,11 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
         </table>
       </div>
 
-      {hayMesesNuevos && (
-        <button onClick={guardarTodo} disabled={guardando}
-          style={{ marginTop:14, background:guardado?C.green:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:700, fontSize:14, cursor:"pointer", width:"100%", opacity:guardando?0.7:1 }}>
-          {guardando ? "Guardando..." : guardado ? "✓ Guardado" : "💾 Guardar cambios"}
-        </button>
-      )}
-
-      {/* Popup edición celda */}
+      {/* POPUP simple (categorías normales) */}
       {popup && (
         <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
           onClick={e => { if (e.target === e.currentTarget) setPopup(null); }}>
           <div style={{ background:C.surface, borderRadius:"20px 20px 0 0", padding:24, width:"100%", maxWidth:420, boxSizing:"border-box", border:`1px solid ${C.border}`, paddingBottom:34 }}>
-            {/* Header popup */}
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
               <div>
                 <div style={{ fontWeight:800, fontSize:16, color:C.text }}>{CATEGORIAS.find(c=>c.id===popup.catId)?.label}</div>
@@ -696,42 +731,24 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
               </div>
               <button onClick={()=>setPopup(null)} style={{ background:"transparent", border:"none", color:C.muted, fontSize:22, cursor:"pointer", padding:0, lineHeight:1 }}>×</button>
             </div>
-
-            {/* Quién pagó */}
             <div style={{ fontSize:12, color:C.muted, marginBottom:8, fontWeight:600 }}>¿Quién pagó?</div>
             <div style={{ display:"flex", gap:8, marginBottom:16 }}>
               {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"]].map(([q,l])=>(
                 <button key={q} onClick={()=>setPopup(p=>({...p,quien:q}))}
-                  style={{ flex:1, padding:"11px 4px", borderRadius:10, border:`2px solid ${popup.quien===q?PC[q]:C.border}`, background:popup.quien===q?PC[q]+"33":"transparent", color:popup.quien===q?PC[q]:C.muted, fontWeight:700, cursor:"pointer", fontSize:14, transition:"all 0.12s" }}>
+                  style={{ flex:1, padding:"11px 4px", borderRadius:10, border:`2px solid ${popup.quien===q?PC[q]:C.border}`, background:popup.quien===q?PC[q]+"33":"transparent", color:popup.quien===q?PC[q]:C.muted, fontWeight:700, cursor:"pointer", fontSize:14 }}>
                   {l}
                 </button>
               ))}
             </div>
-
-            {/* Monto */}
             <div style={{ fontSize:12, color:C.muted, marginBottom:8, fontWeight:600 }}>Monto $</div>
-            <input
-              ref={montoRef}
-              type="text" inputMode="decimal"
-              value={popup.monto}
-              onChange={e=>setPopup(p=>({...p,monto:e.target.value}))}
+            <input ref={montoRef} type="text" inputMode="decimal"
+              value={popup.monto} onChange={e=>setPopup(p=>({...p,monto:e.target.value}))}
               onKeyDown={e=>e.key==="Enter"&&confirmarPopup()}
               placeholder="0"
-              style={{ ...S.input, fontSize:22, fontWeight:800, textAlign:"right", color:PC[popup.quien]||C.accent, borderColor:PC[popup.quien]||C.border, marginBottom:12 }}
-            />
-
-            {/* Descripción (solo para otros/extras) */}
-            {(popup.catId==="otros"||popup.catId==="extras") && (<>
-              <div style={{ fontSize:12, color:C.muted, marginBottom:8, fontWeight:600 }}>Descripción {popup.catId==="otros"?"(requerida)":"(opcional)"}</div>
-              <input type="text" value={popup.descripcion} onChange={e=>setPopup(p=>({...p,descripcion:e.target.value}))}
-                placeholder="Ej: cena, regalo, etc."
-                style={{ ...S.input, marginBottom:12 }} />
-            </>)}
-
-            {/* Botones */}
+              style={{ ...S.input, fontSize:22, fontWeight:800, textAlign:"right", color:PC[popup.quien]||C.accent, borderColor:PC[popup.quien]||C.border, marginBottom:12 }} />
             <div style={{ display:"flex", gap:10, marginTop:4 }}>
               {parseFloat(popup.monto)>0 && (
-                <button onClick={()=>{ setPopup(p=>({...p,monto:""})); setTimeout(()=>montoRef.current?.focus(),50); }}
+                <button onClick={()=>setPopup(p=>({...p,monto:""}))}
                   style={{ ...S.btn(C.red,true), flex:0, padding:"11px 16px", width:"auto" }}>Borrar</button>
               )}
               <button onClick={confirmarPopup}
@@ -742,9 +759,89 @@ function TablaEditable({ gastosCargados, setGastosCargados, mesesActivos }) {
           </div>
         </div>
       )}
+
+      {/* POPUP MULTI (otros / extras) */}
+      {popupMulti && (
+        <div style={{ position:"fixed", inset:0, background:"#000b", zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}
+          onClick={e => { if (e.target === e.currentTarget) setPopupMulti(null); }}>
+          <div style={{ background:C.surface, borderRadius:"20px 20px 0 0", padding:20, width:"100%", maxWidth:480, boxSizing:"border-box", border:`1px solid ${C.border}`, paddingBottom:34, maxHeight:"90vh", overflowY:"auto" }}>
+            {/* Header */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+              <div>
+                <div style={{ fontWeight:800, fontSize:16, color:C.text }}>{CATEGORIAS.find(c=>c.id===popupMulti.catId)?.label}</div>
+                <div style={{ fontSize:12, color:C.muted, marginTop:2 }}>{popupMulti.mes}</div>
+              </div>
+              <button onClick={()=>setPopupMulti(null)} style={{ background:"transparent", border:"none", color:C.muted, fontSize:22, cursor:"pointer", padding:0, lineHeight:1 }}>×</button>
+            </div>
+
+            {/* Lista de items existentes */}
+            {popupMulti.items.length > 0 && (
+              <div style={{ marginBottom:14 }}>
+                <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:8 }}>Items cargados</div>
+                {popupMulti.items.map((it, idx) => (
+                  <div key={idx} style={{ display:"flex", alignItems:"center", gap:8, background:C.card, borderRadius:10, padding:"10px 12px", marginBottom:6 }}>
+                    <span style={S.tag(it.quien)}>{PL[it.quien]}</span>
+                    <span style={{ flex:1, fontSize:13, color:C.text }}>{it.descripcion}</span>
+                    <span style={{ fontWeight:700, color:PC[it.quien]||C.accent, fontSize:13 }}>{fmt(it.monto)}</span>
+                    <button onClick={()=>borrarItemMulti(idx)}
+                      style={{ background:"none", border:"none", color:C.red, cursor:"pointer", fontSize:18, padding:0, lineHeight:1 }}>×</button>
+                  </div>
+                ))}
+                {/* Total */}
+                <div style={{ display:"flex", justifyContent:"space-between", paddingTop:8, borderTop:`1px solid ${C.border}`, marginTop:4 }}>
+                  <span style={{ fontSize:12, color:C.muted, fontWeight:700 }}>Total</span>
+                  <span style={{ fontSize:13, fontWeight:800, color:C.accent }}>{fmt(popupMulti.items.reduce((a,b)=>a+b.monto,0))}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Formulario nuevo item */}
+            <div style={{ background:C.card, borderRadius:12, padding:14, marginBottom:14 }}>
+              <div style={{ fontSize:11, color:C.muted, fontWeight:600, marginBottom:10 }}>
+                {popupMulti.items.length > 0 ? "Agregar otro item" : "Nuevo item"}
+              </div>
+              <div style={{ fontSize:12, color:C.muted, marginBottom:6, fontWeight:600 }}>¿Quién pagó?</div>
+              <div style={{ display:"flex", gap:6, marginBottom:12 }}>
+                {[["martin","Martus"],["vero","Vero"],["fondo","Fondo"]].map(([q,l])=>(
+                  <button key={q} onClick={()=>setPopupMulti(p=>({...p,nuevo:{...p.nuevo,quien:q}}))}
+                    style={{ flex:1, padding:"9px 4px", borderRadius:10, border:`2px solid ${popupMulti.nuevo.quien===q?PC[q]:C.border}`, background:popupMulti.nuevo.quien===q?PC[q]+"33":"transparent", color:popupMulti.nuevo.quien===q?PC[q]:C.muted, fontWeight:700, cursor:"pointer", fontSize:13 }}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize:12, color:C.muted, marginBottom:6, fontWeight:600 }}>
+                Descripción {popupMulti.catId==="otros" ? "(requerida)" : "(opcional)"}
+              </div>
+              <input type="text" value={popupMulti.nuevo.descripcion}
+                onChange={e=>setPopupMulti(p=>({...p,nuevo:{...p.nuevo,descripcion:e.target.value}}))}
+                onKeyDown={e=>e.key==="Enter"&&montoMultiRef.current?.focus()}
+                placeholder="Ej: cena, regalo, milanesas..."
+                style={{ ...S.input, marginBottom:10 }} />
+              <div style={{ fontSize:12, color:C.muted, marginBottom:6, fontWeight:600 }}>Monto $</div>
+              <input ref={montoMultiRef} type="text" inputMode="decimal"
+                value={popupMulti.nuevo.monto}
+                onChange={e=>setPopupMulti(p=>({...p,nuevo:{...p.nuevo,monto:e.target.value}}))}
+                onKeyDown={e=>e.key==="Enter"&&agregarItemMulti()}
+                placeholder="0"
+                style={{ ...S.input, fontSize:20, fontWeight:800, textAlign:"right", color:PC[popupMulti.nuevo.quien]||C.accent, borderColor:PC[popupMulti.nuevo.quien]||C.border, marginBottom:10 }} />
+              <button onClick={agregarItemMulti}
+                style={{ width:"100%", background:PC[popupMulti.nuevo.quien]+"33", color:PC[popupMulti.nuevo.quien], border:`2px solid ${PC[popupMulti.nuevo.quien]}`, borderRadius:10, padding:"10px 0", fontWeight:700, fontSize:14, cursor:"pointer" }}>
+                + Agregar item
+              </button>
+            </div>
+
+            {/* Confirmar todo */}
+            <button onClick={confirmarPopupMulti} disabled={guardando}
+              style={{ width:"100%", background:C.accent, color:"#fff", border:"none", borderRadius:10, padding:"13px 0", fontWeight:700, fontSize:15, cursor:"pointer", opacity:guardando?0.7:1 }}>
+              {guardando ? "Guardando..." : `💾 Guardar (${popupMulti.items.length} item${popupMulti.items.length!==1?"s":""})`}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
 
 function TabCargar({ mesesActivos, gastosCargados, setGastosCargados, ingresosCargados, setIngresosCargados, mepExtra, mes, setMes }) {
   const mesDefault = mesesActivos[mesesActivos.length-1];
@@ -1538,7 +1635,7 @@ export default function App() {
   if (!session) return <LoginScreen onLogin={()=>{}} />;
   if (cargando) return <div style={{ background:C.bg, minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontFamily:"Inter,system-ui,sans-serif" }}>Cargando...</div>;
 
-  const TABS=[{id:"resumen",label:"Resumen"},{id:"cargar",label:"+ Cargar"},{id:"tabla",label:"📋 Tabla"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"liquidar",label:"💸 Liquidar"}];
+  const TABS=[{id:"resumen",label:"Resumen"},{id:"cargar",label:"+ Cargar"},{id:"tabla",label:"📋 Tabla"},{id:"alq",label:"Alquileres"},{id:"rent",label:"📈 Rent."},{id:"balance",label:"Balance"},{id:"graficos",label:"Gráficos"},{id:"liquidar",label:"💸 Liquidar"},{id:"backup",label:"🗄️ Backup"}];
 
   return (
     <div style={S.app}>
@@ -1564,6 +1661,7 @@ export default function App() {
       {tab==="balance"  && <TabBalance mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} ingresosCargados={ingresosCargados} />}
       {tab==="graficos" && <TabGraficos mesesActivos={mesesActivos} gastosCargados={gastosCargados} mepExtra={mepExtra} liquidaciones={liquidaciones} ingresosCargados={ingresosCargados} />}
       {tab==="cargar"   && <TabCargar mesesActivos={mesesActivos} gastosCargados={gastosCargados} setGastosCargados={setGastosCargados} ingresosCargados={ingresosCargados} setIngresosCargados={setIngresosCargados} mepExtra={mepExtra} mes={mes} setMes={setMes} />}
+      {tab==="backup"   && <TabBackups setGastosCargados={setGastosCargados} setIngresosCargados={setIngresosCargados} setLiquidaciones={setLiquidaciones} />}
       {tab==="liquidar" && <TabLiquidar mesesActivos={mesesActivos} gastosCargados={gastosCargados} liquidaciones={liquidaciones} setLiquidaciones={setLiquidaciones} proximoMes={proximoMes} onActivarMes={()=>setModalMes(true)} />}
       {modalMes&&proximoMes&&(
         <div style={{ position:"fixed", inset:0, background:"#000a", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
